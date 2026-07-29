@@ -1,6 +1,6 @@
 # SmartLink Engineering Constitution
 
-**Status:** Ratified · **Version:** 1.0 · **Owner:** Srinivas Makkena (engineer of record)
+**Status:** Ratified · **Version:** 1.1 · **Owner:** Srinivas Makkena (engineer of record)
 
 This document governs how work is done in this repository. It is written before any
 specification and before any code, and every later artifact — spec, plan, task, commit,
@@ -145,11 +145,11 @@ waivable by the author acting alone.
 | Format | Spotless (google-java-format) | Zero violations |
 | Static analysis | Error Prone + SpotBugs | Zero HIGH findings |
 | Unit tests | JUnit 5 | 100 % pass |
-| Integration tests | Testcontainers (real Postgres + Redis) | 100 % pass |
+| Integration tests | Testcontainers (real PostgreSQL) | 100 % pass |
 | Coverage | JaCoCo, on domain and service layers | ≥ 85 % line, ≥ 75 % branch |
 | Dependency security | OWASP Dependency-Check | Zero CVSS ≥ 7 |
 | API contract | OpenAPI spec diffed against previous revision | No unannounced breaking change |
-| Performance | k6 smoke on the redirect path | Meets the spec's stated budget |
+| Performance | Bounded local load run on the redirect path | Method, machine and sample size reported — **no extrapolated scale claims** |
 
 **VI.1** Coverage is a floor, not a target. A high number over weak assertions is worse
 than a lower number over strong ones, because it is actively misleading. Tests assert
@@ -243,3 +243,42 @@ prohibited.
 ```
 
 Each arrow is a human decision. That is the entire point.
+
+---
+
+## Amendment log
+
+Article X requires that amendments state the article changed, the reason, and the
+consequence for existing artifacts. Silent edits are prohibited, so this log exists to make
+the edit history of the governing document itself auditable.
+
+### v1.1 — Article VI (Quality gates)
+
+**Changed.** Two rows of the gate table.
+
+1. *Integration tests* — "Testcontainers (real Postgres + Redis)" → "Testcontainers (real
+   PostgreSQL)".
+2. *Performance* — "k6 smoke … meets the spec's stated budget" → "Bounded local load run …
+   method, machine and sample size reported, no extrapolated scale claims".
+
+**Reason.** The original v1.0 gates were written before the delivery constraints were fixed
+and encoded two assumptions that did not survive contact with them.
+
+The Redis reference presumed a caching tier in v1. The accepted trade-off is to read from
+the system of record in v1 and introduce read-through caching only when measured demand
+justifies it — so a gate demanding a Redis container would have been a gate enforcing
+architecture the design had deliberately deferred. Gates must test the system that exists,
+not the one originally imagined.
+
+The performance row asserted a fixed latency budget as a merge gate. A prototype measured on
+a single laptop cannot substantiate a production latency target, and a gate that appears to
+prove one is worse than no gate at all: it manufactures false confidence and invites exactly
+the unverified scale claim this project should not make. The gate is retained — performance
+is still measured, and regressions are still visible — but it now gates on *honest reporting
+of method and limits* rather than on hitting a number the environment cannot legitimately
+produce.
+
+**Consequence for existing artifacts.** None retroactive. No code existed at amendment time.
+`specs/spec-v1-greenfield.md` §6 was written against v1.1 and separates production design
+targets from what a laptop actually demonstrates. The deferred caching tier is carried as an
+explicit trade-off with its evolution path, not as an omission.
