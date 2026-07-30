@@ -38,8 +38,16 @@ shadowed by an issued code.
 POST /api/v1/links
 Content-Type: application/json
 
-{ "destinationUrl": "https://www.example.com/campaign" }
+{
+  "destinationUrl": "https://www.example.com/campaign",
+  "expiresAt": "2026-08-01T00:00:00Z"
+}
 ```
+
+`expiresAt` is **optional**. Omit it for a link that never expires — which is exactly the
+behaviour before scenario 02, so existing callers are unaffected. It must be an ISO-8601 instant
+carrying an offset; a zone-less local date-time is refused rather than guessed at, because
+guessing is how a campaign silently expires five and a half hours early.
 
 ```http
 HTTP/1.1 201 Created
@@ -49,14 +57,15 @@ Location: /api/v1/links/aB92xK7
   "code": "aB92xK7",
   "shortUrl": "http://localhost:8080/aB92xK7",
   "destinationUrl": "https://www.example.com/campaign",
-  "createdAt": "2026-07-30T10:15:30Z"
+  "createdAt": "2026-07-30T10:15:30Z",
+  "expiresAt": "2026-08-01T00:00:00Z"
 }
 ```
 
 | Status | When |
 |---|---|
 | `201` | Created |
-| `400` | Request body could not be parsed |
+| `400` | Request body could not be parsed, **or `expiresAt` is malformed, zone-less or not in the future** |
 | `422` | Destination rejected by policy |
 | `503` | Dependency unavailable, or code allocation exhausted its attempts |
 
@@ -81,6 +90,7 @@ Cache-Control: no-store
 |---|---|
 | `302` | Resolved |
 | `404` | Unknown **or malformed** code |
+| `410` | **Link existed and has expired.** No `Location` header — a redirect-following client cannot reach the destination |
 | `503` | Mapping could not be verified |
 
 `302` rather than `301`, with `no-store`, so every click reaches the service and the redirect
@@ -102,7 +112,9 @@ Normalising it would silently break signed URLs and tracking parameters.
   "code": "aB92xK7",
   "destinationUrl": "https://www.example.com/campaign",
   "createdAt": "2026-07-30T10:15:30Z",
-  "totalRedirects": 1432
+  "totalRedirects": 1432,
+  "expiresAt": "2026-08-01T00:00:00Z",
+  "status": "ACTIVE"
 }
 ```
 
@@ -136,6 +148,8 @@ Content-Type: application/problem+json
 | Malformed request body | 400 | `MALFORMED_REQUEST` |
 | Destination rejected by policy | 422 | `INVALID_URL` |
 | Unknown short code | 404 | `LINK_NOT_FOUND` |
+| Link expired | 410 | `LINK_EXPIRED` |
+| Invalid expiry | 400 | `INVALID_EXPIRY` |
 | Rate limited *(production only — not implemented)* | 429 | `RATE_LIMITED` |
 | Dependency unavailable | 503 | `SERVICE_UNAVAILABLE` |
 | Unexpected failure | 500 | `INTERNAL_ERROR` |

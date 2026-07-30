@@ -1,14 +1,15 @@
 # Final Engineering Summary
 
-**Scenario 01 (Greenfield) complete.** Scenarios 02 (brownfield: expiration) and 03 (ambiguous:
-reliability) are specified but not implemented — see §8.
+**Scenarios 01 (greenfield) and 02 (brownfield: expiration) complete.** Scenario 03 (ambiguous:
+reliability) is specified but not implemented — see §8.
 
 ```
-mvn verify          232 tests, 0 failures        line 91.8 %   branch 77.7 %
+./mvnw verify       251 tests, 0 failures        line 92.7 %   branch 78.9 %
 smoke-test.sh        25 checks, 0 failures       against docker compose
 trivy                 0 HIGH/CRITICAL            deps · secrets · image
 spotbugs              0 findings at HIGH
 clean-clone           verified end to end        see §5
+rollback              rehearsed, not reasoned    see §4.1
 ```
 
 ---
@@ -64,7 +65,8 @@ and one-way ones were escalated rather than settled in implementation.
 | Requirements · spec · tasks · validation | `docs/scenarios/01-greenfield/` | ✅ complete |
 | Architecture | `docs/architecture-overview.md` | ✅ written from the built system |
 | ADRs | `docs/decisions.md` | ✅ 9 |
-| AI traceability ledger | `docs/ai-assisted-engineering.md` | ✅ 72 entries — 13 generated, 34 edited, **25 rejected** |
+| Scenario 02 — impact analysis, spec, tasks, validation | `docs/scenarios/02-brownfield/` | ✅ complete |
+| AI traceability ledger | `docs/ai-assisted-engineering.md` | ✅ 79 entries — 15 generated, 36 edited, **28 rejected** |
 
 ---
 
@@ -97,6 +99,32 @@ Seven defects passed my own code review and were caught only by execution. The f
   request still failed.
 
 A traceability table shows only that tests exist. That list shows whether they earn their cost.
+
+### 4.1 Rollback, rehearsed rather than reasoned
+
+Scenario 02 changes the schema, so the claim that it can be rolled back is the one most worth
+doubting. It was executed rather than argued:
+
+The **brownfield** jar applied V1 and V2 to a clean PostgreSQL and created two links — one plain,
+one expiring in 2030. It was stopped, and the **pre-change Greenfield jar** (built from commit
+`f3be7a6`) was started against that same migrated database.
+
+| Check | Result |
+|---|---|
+| Old app starts against the migrated schema | ✅ Hibernate `validate` tolerates a column it does not map |
+| Pre-existing link resolves | ✅ `302` |
+| Link carrying an expiry the old app cannot see | ✅ `302` — **resolves as non-expiring** |
+| Old app can still create | ✅ `201` |
+| Data loss | ✅ none; the expiry value survives untouched |
+
+The third row is the honest one: **during a rollback window an expiring link behaves as though it
+never expired.** That is the accepted cost of expand-only delivery, predicted in the impact
+analysis before the code was written — not discovered afterwards.
+
+Two environment hazards surfaced while doing it, both recorded in
+`scenarios/02-brownfield/validation.md` §7: a native PostgreSQL on the host silently shadowing the
+container's published port, and a stale Docker volume retaining credentials from a differently
+named compose project. Each would have produced a confidently wrong result.
 
 ---
 
@@ -164,7 +192,7 @@ cannot scale independently), single instance (proves nothing about HA), `apk upg
 
 Stated plainly, because the alternative is letting a reviewer find them.
 
-1. **Scenarios 02 and 03 are not implemented.** Requirements are written; expiration and the reliability normalisation are not built. This is the largest gap between what the repository promises and what it delivers.
+1. **Scenario 03 is not implemented.** Its requirements and the "improve reliability" normalisation are written; nothing is built. This is now the largest gap between what the repository promises and what it delivers.
 2. **No SLO is proven.** Identical code measured p95 55.7 ms and 507 ms in different runs, driven by unrelated desktop load. Only the contention *ratio* survived, and only that is reported as a finding.
 3. **Single instance, single AZ.** Horizontal scalability is a property of the design — no node-local state, asserted by ArchUnit — not something demonstrated.
 4. **No caching, replicas, async analytics, circuit breaking or rate limiting.** Each is real work; none can be *validated* here, and shipping unvalidated reliability machinery improves the appearance of reliability rather than reliability.
@@ -177,8 +205,8 @@ Stated plainly, because the alternative is letting a reviewer find them.
 
 In priority order, which is itself a judgment worth stating:
 
-1. **Scenario 02 (expiration)** — the brownfield exercise is where impact analysis, migration safety and backward compatibility actually get demonstrated, and it is the biggest missing piece.
-2. **Scenario 03 (reliability)** — normalise the ambiguous requirement, and be explicit about what was deliberately excluded.
+1. **Scenario 03 (reliability)** — normalise the ambiguous requirement into a bounded scope, and be explicit about what was deliberately excluded. The remaining scenario, and the one that demonstrates handling an underspecified request.
+2. **Re-run the performance harness after scenario 02.** The resolve path gained one in-memory comparison on an already-fetched row, so no measurable change is expected — but expected is not measured.
 3. **Abuse controls before any public exposure.** A public shortener without them is a phishing platform with extra steps.
 4. **Key issuance and rotation** — the largest gap between this and something deployable.
 5. **Measure before optimising.** The cache and async analytics remain deferred on the grounds that no measurement justifies them. That claim is now testable rather than merely asserted, and it should be tested rather than trusted.
@@ -189,7 +217,7 @@ In priority order, which is itself a judgment worth stating:
 
 The engineer of record owns every artifact in this repository regardless of which keystrokes were
 typed by a tool. Every line was read before commit; every material AI contribution is classified in
-[`ai-assisted-engineering.md`](ai-assisted-engineering.md), including **25 rejections** with their
+[`ai-assisted-engineering.md`](ai-assisted-engineering.md), including **28 rejections** with their
 reasoning — among them a version verified against a stale search index, a transaction annotation
 that could not work, a mocked failure that would have proven nothing, and a test client that
 silently followed the redirects it was meant to be asserting on.

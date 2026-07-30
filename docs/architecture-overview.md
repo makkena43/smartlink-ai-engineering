@@ -7,10 +7,10 @@ design that was intended. Where the two diverged, the divergence is recorded.
 |---|---|
 | Runtime | Java 21.0.11, Spring Boot 3.5.16 |
 | Persistence | PostgreSQL 16, Flyway, Spring Data JPA |
-| Production code | 2 292 lines, 34 classes |
-| Test code | 3 503 lines, 232 tests |
+| Production code | ~2 600 lines, 39 classes |
+| Test code | ~3 900 lines, 251 tests |
 | Delivery | Docker Compose |
-| Status | Scenario 01 complete; 02 (expiration) and 03 (reliability) not started |
+| Status | Scenarios 01 and 02 complete; 03 (reliability) not started |
 
 That test-to-production ratio of roughly 1.5 : 1 is not an accident of style. Most of it sits in
 two places — the destination policy and the failure postures — because those are where being
@@ -63,28 +63,31 @@ convention — `LayeringTest` fails the build on violation.
                         └──────────────────┬─────────────────────────────┘
                                            │
                         ┌──────────────────▼─────────────────────────────┐
-                        │  application                        7 classes  │
+                        │  application                        9 classes  │
                         │  CreateLink · ResolveLink · ReadAnalytics      │
-                        │  4 exception types                             │
+                        │  6 exception types                             │
                         └──────────────────┬─────────────────────────────┘
                                            │
                         ┌──────────────────▼─────────────────────────────┐
-                        │  domain                            10 classes  │
+                        │  domain                            12 classes  │
                         │  DestinationPolicy · HostLiterals              │
                         │  AddressPolicy · ShortCode · CodeGenerator     │
+                        │  LinkLifecycle                                 │
                         │  ports: HostResolver · LinkRepository          │
+                        │         TimeSource                             │
                         │  ── no Spring, no JPA, no I/O ──               │
                         └──────────────────▲─────────────────────────────┘
                                            │ implements ports
                         ┌──────────────────┴─────────────────────────────┐
-                        │  infrastructure                     6 classes  │
+                        │  infrastructure                     7 classes  │
                         │  JpaLinkRepository · ShortLinkEntity           │
                         │  SystemHostResolver · BoundedRetry             │
+                        │  SystemTimeSource                              │
                         └────────────────────────────────────────────────┘
 ```
 
 **Why the rule earns its cost.** `DestinationPolicy` and `CodeGenerator` carry the highest branch
-density in the system, and 88 of the 232 tests exercise them — all with no Spring context and no
+density in the system, and 95 of the 251 tests exercise them — all with no Spring context and no
 database. That is only possible because DNS sits behind `HostResolver` and storage behind
 `LinkRepository`. A policy that could only be tested when DNS cooperated would be a policy whose
 tests got skipped.
@@ -126,6 +129,9 @@ submitted twice yields two independent links, because nothing ever asks whether 
                     (1 jittered retry)   │
                                          ├── unavailable ─▶ 503, never a guess
                                          │
+                   lifecycle check ──────┼── expired ────▶ 410, NO Location   ← v2
+                    (TimeSource)         │
+                                         │
                    increment counter ────┤
                     (atomic UPDATE) ─────┴── fails ──▶ log WARN, CONTINUE
                                          │
@@ -136,6 +142,11 @@ submitted twice yields two independent links, because nothing ever asks whether 
 The fail-open branch is the architecturally significant one, and it is **invisible in the code** —
 an ordinary try/catch. `AnalyticsFailureIT` keeps it true by refusing every `UPDATE` at the
 database and asserting the redirect still arrives.
+
+The lifecycle check's **position** is equally load-bearing and equally invisible. Above the lookup
+it would make an expired link indistinguishable from an unknown one, collapsing `410` back into
+`404`. Below the increment it would count redirects that never happened — inflating the figure for
+precisely the finished campaigns most likely to be examined afterwards.
 
 ---
 
@@ -182,6 +193,7 @@ short_link
   destination_url varchar(2048) NOT NULL          ← stored byte-identical
   created_at      timestamptz   NOT NULL DEFAULT now()
   total_redirects bigint        NOT NULL DEFAULT 0  CHECK (>= 0)
+  expires_at      timestamptz   NULL                 ← v2, nullable: NULL means never expires
 ```
 
 **No `version` column.** `total_redirects` is written on every redirect, so optimistic locking
@@ -204,6 +216,8 @@ a reviewer would see.
 | Database unreachable | `503` | Come back. Never a guessed or stale destination |
 | Code allocation exhausted | `503` | Nothing broken; retryable |
 | Genuinely unanticipated | `500` | Reserved, so its presence in a log means something |
+| **Link expired** | **`410`, no `Location`** | Existed and ended — distinct from "never existed", so a log tells a typo from a finished campaign |
+| Invalid expiry supplied | `400` | The caller can fix it by sending different bytes |
 | Counter write fails | **`302` anyway** | The redirect is the product; the counter is instrumentation |
 
 **Liveness excludes the database; readiness includes it.** If liveness consulted the database, one
@@ -240,7 +254,6 @@ Stated so absence reads as decision:
 | Read replicas | Must come *after* a cache, or a just-created link gets a false 404 from a lagging replica |
 | Rate limiting | Scenario 03. No identity exists to attach a quota to |
 | Multi-instance / multi-AZ | Statelessness is proven by construction; the deployment is not |
-| Expiration | Scenario 02 |
 | Fetch-time re-validation | The TOCTOU gap (R-1b) is real and unfixable at creation time. Binding constraint on the first feature that fetches a destination |
 | Homograph detection | A phishing control, not an injection control. A partial implementation gives false assurance |
 
@@ -309,5 +322,20 @@ rewrite. Everything else on it is a design commitment.
 | Version | Change | Sections affected |
 |---|---|---|
 | v1 | Create, resolve, basic analytics, destination policy, resilience | all |
-| v2 | *not started* — expiration | §5 data model, §3 resolve flow |
+| **v2** | **Optional expiration** — nullable `expires_at`, `TimeSource` port, lifecycle check on resolve, `410 Gone` | §3 resolve flow, §5 data model, §6 failure table |
 | v3 | *not started* — reliability posture | §6, §8 |
+
+### What v2 changed, and what it deliberately did not
+
+Delivered expand-only: one nullable column, no backfill, no contract step. **Verified by
+rehearsal, not by assertion** — the pre-change jar was run against the migrated schema and
+resolved every existing link, including one carrying an expiry it knows nothing about (which
+resolves as non-expiring during a rollback window; a known, accepted consequence).
+
+The resolve path gained exactly one branch, placed between the verified lookup and the counter
+increment. Before the lookup, an expired link would be indistinguishable from an unknown one;
+after the increment, redirects that never happened would be counted.
+
+Unchanged: `302` and `Cache-Control` for active links, `404` for unknown *and* malformed codes,
+`503` on datastore failure, and the fail-open counter. `AnalyticsFailureIT` passes untouched,
+which is what proves the last of those survived the new branch.

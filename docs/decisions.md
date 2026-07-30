@@ -18,6 +18,8 @@ An ADR with no negative consequences listed is an advertisement, not a decision 
 | [007](#adr-007) | Modular monolith | Accepted | Costly |
 | [008](#adr-008) | PostgreSQL as system of record; no cache in v1 | Accepted | Reversible |
 | [009](#adr-009) | Random codes, uniqueness enforced by the database | Accepted | Costly |
+| [010](#adr-010) | Expired links return 410, not 404 | Accepted | Costly |
+| [011](#adr-011) | Expiry evaluated through a time port, not `Instant.now()` | Accepted | Reversible |
 
 ---
 
@@ -253,3 +255,63 @@ free. Letting the unique index arbitrate makes the collision *impossible* rather
 fail and retry, so creation latency has a tail; code length is fixed and changing it later
 affects every future code. *Neutral:* NFR-5 tests behaviour under a **forced** collision —
 probability arguments fail silently, tests do not.
+
+
+---
+
+## ADR-010 {#adr-010}
+### An expired link returns 410 Gone, not 404 Not Found
+
+**Status** Accepted · **Scenario** 02-brownfield · **Reversibility** Costly
+
+**Context.** Scenario 02 introduces links that stop resolving at a chosen instant. A visitor who
+follows one afterwards has to be told something.
+
+**Options.** `404 Not Found` — reuse the unknown-code response. `410 Gone` — a distinct status.
+`302` to a configurable landing page.
+
+**Decision.** `410 Gone`, with no `Location` header.
+
+**Why.** `404` and `410` answer genuinely different questions: *never existed* versus *existed and
+was deliberately ended*. That difference is what lets an operator, or a campaign owner reading an
+access log, tell a typo apart from a finished campaign **without querying the database**.
+Collapsing both into `404` discards that signal permanently and saves nothing.
+
+The landing-page option was rejected on stronger grounds: it makes the service responsible for
+hosting content, and an expired link would still *work* from the visitor's point of view — the
+opposite of what "stop redirecting" asked for.
+
+**Consequences.** *Positive:* the two states stay distinguishable in logs and to clients; the
+absence of `Location` makes it structurally impossible for a redirect-following client to reach
+the destination anyway. *Negative:* it is a public contract, so a client that special-cases `410`
+would break if this ever became `404`. *Neutral:* additive — no previously reachable state changes
+its status, which is why the API stays on `/api/v1`.
+
+**Revisit when** never, absent a product decision to reintroduce expired links as something other
+than gone.
+
+---
+
+## ADR-011 {#adr-011}
+### Expiry is evaluated through a time port, not `Instant.now()`
+
+**Status** Accepted · **Scenario** 02-brownfield · **Reversibility** Reversible
+
+**Context.** Expiry is an inequality against "now". Something has to supply "now".
+
+**Decision.** A `TimeSource` port in the domain, implemented in infrastructure over
+`Clock.systemUTC()`. The lifecycle rule takes the instant as a parameter.
+
+**Why.** Two reasons that both bite in production rather than in a demo:
+
+- **The interesting cases are all at the boundary** — the instant before, the instant itself, the
+  instant after. With a hardcoded clock those can only be tested by sleeping, and a sleeping test
+  is slow, flaky, and the first thing deleted when CI goes red for an unrelated reason.
+- **One clock, not one per instance.** Several stateless instances each calling `Instant.now()`
+  means several clocks that disagree. A link near its expiry would resolve on one instance and
+  return `410` on the next, with nothing to reproduce.
+
+**Consequences.** *Positive:* every boundary case is a plain assertion; the suite gained no sleeps.
+*Negative:* one more constructor argument, which is what forced three Greenfield test files to be
+edited (`impact-analysis.md` §5). *Neutral:* a deployment could substitute a synchronised clock
+without touching the domain.

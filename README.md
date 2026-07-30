@@ -7,13 +7,15 @@ Spec-Driven Development (SDD), Java 21 and Spring Boot 3.
 > requirements, architecture, acceptance criteria, risk decisions and final validation; AI
 > is used as a bounded accelerator for analysis, implementation, testing and documentation.
 
-**Status:** Scenario 01 (greenfield) complete and verified end to end. Scenarios 02 (expiration)
-and 03 (reliability) are specified but not implemented.
+**Status:** Scenarios 01 (greenfield) and 02 (brownfield — link expiration) complete and verified
+end to end. Scenario 03 (ambiguous — reliability) is specified but not implemented.
 
 ```
-mvn verify      232 tests, 0 failures     line 91.8 %   branch 77.7 %
+./mvnw verify   251 tests, 0 failures     line 92.7 %   branch 78.9 %
 smoke-test.sh    25 checks, 0 failures    against docker compose
 trivy             0 HIGH/CRITICAL         dependencies · secrets · image
+spotbugs          0 findings at HIGH
+rollback          rehearsed: pre-change jar runs against the migrated schema
 ```
 
 ---
@@ -102,6 +104,11 @@ curl -i "localhost:8080/$CODE"
 # analytics
 curl "localhost:8080/api/v1/links/$CODE/analytics"
 
+# create with an expiry  (scenario 02) - omit expiresAt for a link that never expires
+curl -X POST localhost:8080/api/v1/links \
+  -H 'Content-Type: application/json' \
+  -d '{"destinationUrl":"https://example.com/campaign","expiresAt":"2030-01-01T00:00:00Z"}'
+
 # rejected: cloud metadata endpoint, well-formed and https-adjacent but blocked  →  422
 curl -X POST localhost:8080/api/v1/links \
   -H 'Content-Type: application/json' \
@@ -149,9 +156,9 @@ engineering mode.
 
 | | Requirement | What it demonstrates |
 |---|---|---|
-| **[01 Greenfield](docs/scenarios/01-greenfield/)** | *"Build a URL shortener with redirect and basic analytics."* | Design from first principles; 10 ambiguities surfaced and resolved with rationale |
-| **[02 Brownfield](docs/scenarios/02-brownfield/)** | *"Add expiration so campaigns can stop redirecting after a defined time."* | Codebase reasoning — impact analysis, migration, backward compatibility, all against code that already exists |
-| **[03 Ambiguous](docs/scenarios/03-ambiguous/)** | *"Improve reliability."* | Normalising a direction into a bounded, testable scope — and naming what was deliberately excluded |
+| **[01 Greenfield](docs/scenarios/01-greenfield/)** ✅ | *"Build a URL shortener with redirect and basic analytics."* | Design from first principles; 10 ambiguities surfaced and resolved with rationale |
+| **[02 Brownfield](docs/scenarios/02-brownfield/)** ✅ | *"Add expiration so campaigns can stop redirecting after a defined time."* | Codebase reasoning — impact analysis written from the committed code, expand-only migration, backward compatibility, **rollback rehearsed with the pre-change jar** |
+| **[03 Ambiguous](docs/scenarios/03-ambiguous/)** ⏳ *not implemented* | *"Improve reliability."* | Normalising a direction into a bounded, testable scope — and naming what was deliberately excluded |
 
 ---
 
@@ -183,7 +190,7 @@ ambiguity registers, task envelopes, traceability, quality gates, secure AI usag
 sign-off — written *before* the first specification.
 
 The traceability ledger classifies every material AI contribution as `GENERATED`, `EDITED` or
-`REJECTED`. **It contains 25 rejections** — among them a dependency version verified against a
+`REJECTED`. **It contains 28 rejections** — among them a dependency version verified against a
 stale search index, a `@Transactional` annotation that could not do what it appeared to,
 a mocked failure that would have proven nothing, and a test client that silently followed the
 very redirects it was meant to be asserting on.
