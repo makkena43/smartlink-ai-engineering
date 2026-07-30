@@ -59,7 +59,7 @@ and one-way ones were escalated rather than settled in implementation.
 | Test suite | `src/test/java` | 270 tests, including fault-injection and controlled shutdown coverage |
 | Generated API contract | `/v3/api-docs`, `/swagger-ui.html` | ✅ generated, never hand-maintained |
 | Schema | `V1__create_short_link.sql` | ✅ Flyway, forward-only |
-| Smoke test | `scripts/smoke-test.sh` | ✅ 25/25 |
+| End-to-end acceptance smoke test | `scripts/smoke-test.sh` | ✅ 25/25 |
 | Performance harness + results | `scripts/performance-test/` | ✅ 3 runs, ratio analysis |
 | Requirements · spec · tasks · validation | `docs/scenarios/01-greenfield/` | ✅ complete |
 | Architecture | `docs/architecture-overview.md` | ✅ written from the built system |

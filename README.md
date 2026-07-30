@@ -209,7 +209,7 @@ Detail: [`docs/ai-assisted-engineering.md`](docs/ai-assisted-engineering.md).
 | Controller | `mvn test` | Status codes, headers, problem+json, route precedence |
 | Integration | `mvn verify` | Real PostgreSQL via Testcontainers; migrations; unique-code races |
 | Fault injection | `mvn verify` | Analytics down → redirect still works; datastore down → 503, never a guess |
-| Smoke | `./scripts/smoke-test.sh` | Full reviewer path against the running stack |
+| End-to-end acceptance | `./scripts/smoke-test.sh` | Full reviewer path against the Docker Compose stack |
 
 Coverage gates at 85 % line / 75 % branch — a **floor, not a target**. A high number over
 weak assertions is worse than a lower number over strong ones, because it converts "we did

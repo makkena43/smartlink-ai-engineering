@@ -12,9 +12,10 @@ into "we checked and it was fine". Tests here assert behaviour, not implementati
 |---|---|---|---|
 | **Unit** | Code generation, alias policy, URL policy, expiry rule (v2), error mapping | `mvn test` (Surefire) | milliseconds — no Spring, no database |
 | **Integration** | Persistence, Flyway migration, unique-code behaviour, expiry, and reliability behavior | `mvn verify` (Failsafe, `*IT.java`) | seconds — real PostgreSQL via Testcontainers |
-| **Controller** | Status codes, headers, `Location`, problem+json shape, auth | `mvn test` (MockMvc) | fast — no container |
+| **Component / web** | Status codes, headers, `Location`, problem+json shape, and route precedence through Spring MVC | `mvn test` (MockMvc) | fast — no container |
+| **API contract** | Generated OpenAPI availability and reachable response semantics, including expiration `410` | `mvn verify` | seconds — contract derives from the running controllers |
 | **Fault injection** | Analytics down, datastore down/recovery, slow queries, graceful shutdown, and reliability signals | `mvn verify` | seconds |
-| **Smoke** | Full reviewer path against the running stack | `./scripts/smoke-test.sh` | seconds |
+| **End-to-end acceptance** | Full reviewer path against the Docker Compose stack | `./scripts/smoke-test.sh` | seconds |
 | **Performance** | Redirect path under bounded local load | `scripts/performance-test/` | minutes, run deliberately |
 
 The split is not decorative. The domain layer imports no framework, so the tests that matter
@@ -33,6 +34,15 @@ the highest branch density and the lowest cost to test exhaustively.
 **Integration tests exist for the things unit tests structurally cannot prove.** Chiefly: that
 a unique index actually arbitrates concurrent inserts, and that Flyway's schema and
 Hibernate's expectations agree. Mocking a database would test the mock.
+
+**Component, contract, and acceptance coverage are deliberately proportionate to this
+prototype.** Spring MVC tests provide component-level coverage of the HTTP adapter. Contract
+coverage checks the generated OpenAPI document and the public statuses that clients can observe;
+the OpenAPI document is generated from controllers and DTOs, so it remains tied to implementation.
+`scripts/smoke-test.sh` is the end-to-end acceptance artifact: it runs the documented create →
+resolve → analytics path against Docker Compose. Consumer-driven contract testing (for example,
+Pact) is intentionally deferred because this repository has no independently deployed API
+consumer whose expectations could be captured.
 
 **Fault-injection tests exist to stop a refactor from silently undoing a design decision.**
 Two matter most:
@@ -75,7 +85,7 @@ the same commands in CI.
 | Coverage — branch | JaCoCo | ≥ 75 % |
 | Dependency / secret scan | Trivy, recorded before submission | Zero HIGH / CRITICAL dependencies; zero secrets |
 | Static analysis | SpotBugs at HIGH | Zero findings |
-| Smoke | `scripts/smoke-test.sh` | all checks pass |
+| End-to-end acceptance | `scripts/smoke-test.sh` | all checks pass |
 | Performance | bounded local run | method, machine and sample size reported; **no extrapolated claims** |
 
 ### A known hole, stated rather than hidden
