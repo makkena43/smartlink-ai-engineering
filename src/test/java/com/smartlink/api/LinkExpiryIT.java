@@ -129,17 +129,41 @@ class LinkExpiryIT extends AbstractPostgresIT {
   }
 
   @Test
-  @DisplayName("a malformed or zone-less expiry is refused, never guessed at")
+  @DisplayName(
+      "a malformed or zone-less expiry is refused as INVALID_EXPIRY, not MALFORMED_REQUEST")
   void malformedExpiryIsRefused() {
     // "2026-08-01T00:00:00" has no offset. Guessing a zone is how a campaign silently expires
     // five and a half hours early for whoever deployed in a different one.
-    for (String bad : new String[] {"2026-08-01T00:00:00", "not-a-timestamp", "01/08/2026"}) {
-      assertThat(
-              create(Map.of("destinationUrl", "https://example.com/x", "expiresAt", bad))
-                  .getStatusCode())
+    //
+    // This assertion was originally `isIn(BAD_REQUEST, UNPROCESSABLE_ENTITY)`, which passed
+    // while the service actually returned MALFORMED_REQUEST - both are 400, so the loose
+    // matcher hid a real contract mismatch against the specification's promise of
+    // INVALID_EXPIRY. Asserting the public code as well as the status is what closes that
+    // gap: a status alone is too coarse to pin a contract to.
+    for (String bad :
+        new String[] {
+          "2026-08-01T00:00:00", "not-a-timestamp", "01/08/2026", "2026-13-45T00:00:00Z"
+        }) {
+      ResponseEntity<String> response =
+          create(Map.of("destinationUrl", "https://example.com/x", "expiresAt", bad));
+
+      assertThat(response.getStatusCode())
           .as("expiry %s must be refused", bad)
-          .isIn(HttpStatus.BAD_REQUEST, HttpStatus.UNPROCESSABLE_ENTITY);
+          .isEqualTo(HttpStatus.BAD_REQUEST);
+      assertThat(response.getBody())
+          .as("expiry %s must be reported as INVALID_EXPIRY", bad)
+          .contains("INVALID_EXPIRY");
     }
+  }
+
+  @Test
+  @DisplayName("the generated OpenAPI documents the 410 response")
+  void openApiDocumentsExpiredResponse() {
+    // P2: runtime behaviour was correct while the published contract omitted 410 entirely, so a
+    // consumer generating a client from it had no way to know the state existed.
+    String contract = rest.getForEntity("/v3/api-docs", String.class).getBody();
+
+    assertThat(contract).contains("\"410\"");
   }
 
   // ---------------------------------------------------------------------------------------

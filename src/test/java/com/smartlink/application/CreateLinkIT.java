@@ -71,7 +71,7 @@ class CreateLinkIT extends AbstractPostgresIT {
         .as("NFR-01: the mapping must survive as stored, not merely be returned")
         .isPresent()
         .get()
-        .satisfies(found -> assertThat(found.destination().value()).isEqualTo(VALID_URL));
+        .satisfies(found -> assertThat(found.link().destination().value()).isEqualTo(VALID_URL));
     assertThat(link.createdAt()).as("assigned by the database clock").isNotNull();
   }
 

@@ -4,9 +4,9 @@ import com.smartlink.application.exception.LinkExpiredException;
 import com.smartlink.application.exception.LinkNotFoundException;
 import com.smartlink.domain.Link;
 import com.smartlink.domain.LinkLifecycle;
+import com.smartlink.domain.ResolvedLink;
 import com.smartlink.domain.ShortCode;
 import com.smartlink.domain.port.LinkRepository;
-import com.smartlink.domain.port.TimeSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -34,11 +34,9 @@ public class ResolveLinkUseCase {
   private static final Logger log = LoggerFactory.getLogger(ResolveLinkUseCase.class);
 
   private final LinkRepository repository;
-  private final TimeSource timeSource;
 
-  public ResolveLinkUseCase(LinkRepository repository, TimeSource timeSource) {
+  public ResolveLinkUseCase(LinkRepository repository) {
     this.repository = repository;
-    this.timeSource = timeSource;
   }
 
   /**
@@ -58,7 +56,8 @@ public class ResolveLinkUseCase {
 
     // Deliberately outside any try/catch. A failure here means the mapping could not be
     // verified, and NFR-02 says that must surface - the caller gets 503 rather than a guess.
-    Link link = repository.findByCode(code).orElseThrow(() -> new LinkNotFoundException("no link"));
+    ResolvedLink resolved =
+        repository.findByCode(code).orElseThrow(() -> new LinkNotFoundException("no link"));
 
     // Lifecycle is decided AFTER the mapping is verified and BEFORE anything is counted or
     // emitted. Both halves of that ordering are load-bearing:
@@ -67,13 +66,18 @@ public class ResolveLinkUseCase {
     //     collapsing 410 back into 404 and throwing away the signal the status split exists for
     //   * after the increment -> redirects that never happened would be counted, and the number
     //     would drift upward for exactly the campaigns most likely to be examined
-    if (link.lifecycleAt(timeSource.now()) == LinkLifecycle.EXPIRED) {
+    // Evaluated against the DATABASE's clock, carried back with the row rather than read from
+    // this instance (A-12). Several stateless instances each reading their own clock would
+    // disagree near an expiry: the same link would resolve on one and 410 on the next, with
+    // nothing reproducible to chase. The observation costs no extra round trip - it rides
+    // along in the lookup that was happening anyway.
+    if (resolved.lifecycle() == LinkLifecycle.EXPIRED) {
       throw new LinkExpiredException("link expired");
     }
 
     recordRedirect(code);
 
-    return link;
+    return resolved.link();
   }
 
   /**

@@ -3,7 +3,6 @@ package com.smartlink.api.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import java.time.Instant;
 
 /**
  * Request to shorten a destination URL.
@@ -37,7 +36,10 @@ public record CreateLinkRequest(
     @Schema(
             description =
                 "Optional UTC instant after which the link stops resolving. Omit for a link that "
-                    + "never expires. Must carry an offset.",
+                    + "never expires. ISO-8601 and must carry an offset; a zone-less local "
+                    + "date-time is refused rather than guessed at.",
             example = "2026-08-01T00:00:00Z",
+            type = "string",
+            format = "date-time",
             requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-        Instant expiresAt) {}
+        String expiresAt) {}

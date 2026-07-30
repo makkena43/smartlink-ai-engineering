@@ -4,8 +4,8 @@ Evidence that optional link expiration works **and that the existing service did
 change**. The second half is the point of a brownfield scenario.
 
 ```
-./mvnw verify     251 tests, 0 failures     (was 232 before this change)
-                  172 unit + 79 integration
+./mvnw verify     258 tests, 0 failures     (was 232 before this change)
+                  172 unit + 86 integration
 SpotBugs          0 findings at HIGH
 ```
 
@@ -87,8 +87,8 @@ keeps this additive and off `/api/v2`.
 | Build | ✅ |
 | Format — Spotless | ✅ |
 | Unit + controller | ✅ 172 |
-| Integration — real PostgreSQL | ✅ 79 |
-| Coverage — line / branch | ✅ 92.7 % / 78.9 % (**up** from 91.8 / 77.7) |
+| Integration | ✅ 86 — 80 on real PostgreSQL, 6 on the H2 demo profile |
+| Coverage — line / branch | ✅ 92.6 % / 78.7 % (**up** from 91.8 / 77.7) |
 | Static analysis — SpotBugs HIGH | ✅ 0 |
 | Dependency vulnerabilities | ✅ 0 HIGH/CRITICAL |
 | Secrets | ✅ 0 |
@@ -128,7 +128,62 @@ Two, both worth recording because both would silently invalidate a result:
 1. **A native PostgreSQL on the host held `127.0.0.1:5432`**, shadowing the container's published port. The first attempts were talking to an entirely different database, and reported `role "smartlink" does not exist` rather than anything pointing at the real cause. The rehearsal was moved to port 5433. This does not affect any other result in this repository: the compose application reaches PostgreSQL over the Docker network, and Testcontainers binds random ports.
 2. **A stale Docker volume** from a differently-named compose project persisted old credentials. `POSTGRES_*` variables are honoured only when initialising an empty data directory, so the container ignored the values it was given.
 
-## 8. Not done
+## 8. Post-review verification
+
+Review of the completed implementation raised three contract mismatches (P1, P2a, P2b). A fourth
+(P3) was found while verifying the fix for the first. All four are described in
+[`impact-analysis.md` §8](impact-analysis.md#8-revisions-made-after-review); this section records
+the evidence.
+
+### Suite after the fixes
+
+```
+Tests run: 172, Failures: 0, Errors: 0, Skipped: 0   (unit)
+Tests run:  86, Failures: 0, Errors: 0, Skipped: 0   (integration)
+All coverage checks have been met.
+BugInstance size is 0
+BUILD SUCCESS
+```
+
+**258 tests**, up from 251 at the pre-review sign-off: `+1` OpenAPI assertion, `+6` demo profile.
+
+### Evidence per finding
+
+| # | Finding | How it is now prevented from recurring |
+|---|---|---|
+| P1 | Clock was per-instance, contradicting A-12 | The port cannot be satisfied by a local clock on the redirect path — the instant arrives *with the row* from the database. There is no local clock left to get wrong |
+| P2a | `410` implemented but absent from the published contract | `openApiDocumentsExpiredResponse` fetches `/v3/api-docs` and asserts it contains `410`. Documenting without asserting would have re-created the gap |
+| P2b | Malformed expiry returned `MALFORMED_REQUEST`, not `INVALID_EXPIRY` | Assertion tightened from `isIn(400, 422)` with no body check, to exactly `400` **and** a body containing `INVALID_EXPIRY`; a fourth case added |
+| P3 | Demo profile broken in three ways, invisible to the suite | `DemoProfileIT` — 6 tests covering create, resolve, future expiry, `410`, analytics agreement and migration portability, **on H2, needing no Docker** |
+
+### Demo profile, verified by hand before the test was written
+
+Run against `java -jar target/smartlink-1.0.0.jar --spring.profiles.active=h2`:
+
+| Check | Result |
+|---|---|
+| Link with no expiry resolves | ✅ `302` |
+| Link with a future expiry resolves | ✅ `302` |
+| Same link after expiry | ✅ `410` |
+| `Location` header on the `410` | ✅ absent |
+| Redirect count after one live and one refused attempt | ✅ `1`, status `EXPIRED` |
+| Expiry in the past | ✅ `INVALID_EXPIRY` |
+| Zone-less expiry | ✅ `INVALID_EXPIRY` |
+
+Before the fixes, rows 2–7 were `503` or `404`.
+
+### A note on the environment, since it caused a false signal
+
+During this work the Docker daemon died mid-session and `mvn verify` reported **74 errors** across
+every PostgreSQL-backed test. Not one was a code defect — `AbstractPostgresIT` could not reach a
+Docker environment, and the same build passed unchanged after `colima restart`. It is recorded
+because the failure mode is worth recognising: **a whole-suite failure that arrives all at once,
+in milliseconds per test, at class-initialisation, is infrastructure and not regression.** Reading
+one stack trace distinguished the two in seconds; re-running the suite would not have.
+
+---
+
+## 9. Not done
 
 1. **No performance re-run after this change.** The redirect path gained one in-memory comparison on an already-fetched row, so no measurable effect is expected — but "expected" is not "measured", and it is not claimed as such.
 2. **No expiry mutation** (A-13), no retention or cleanup of expired rows, no cache interaction. All deliberate.

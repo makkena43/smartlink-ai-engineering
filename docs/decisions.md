@@ -19,7 +19,8 @@ An ADR with no negative consequences listed is an advertisement, not a decision 
 | [008](#adr-008) | PostgreSQL as system of record; no cache in v1 | Accepted | Reversible |
 | [009](#adr-009) | Random codes, uniqueness enforced by the database | Accepted | Costly |
 | [010](#adr-010) | Expired links return 410, not 404 | Accepted | Costly |
-| [011](#adr-011) | Expiry evaluated through a time port, not `Instant.now()` | Accepted | Reversible |
+| [011](#adr-011) | Expiry evaluated through a time port, not `Instant.now()` | **Superseded by 012** | Reversible |
+| [012](#adr-012) | The database's clock is authoritative for expiry | Accepted | Reversible |
 
 ---
 
@@ -295,7 +296,11 @@ than gone.
 ## ADR-011 {#adr-011}
 ### Expiry is evaluated through a time port, not `Instant.now()`
 
-**Status** Accepted · **Scenario** 02-brownfield · **Reversibility** Reversible
+**Status** **Superseded by [ADR-012](#adr-012)** · **Scenario** 02-brownfield · **Reversibility** Reversible
+
+> **Superseded, and worth reading anyway.** The port was right and survives. The *implementation
+> chosen underneath it* — `Clock.systemUTC()` — contradicted the second bullet of this ADR's own
+> "Why", which is what makes this entry instructive rather than merely obsolete. See ADR-012.
 
 **Context.** Expiry is an inequality against "now". Something has to supply "now".
 
@@ -315,3 +320,73 @@ than gone.
 *Negative:* one more constructor argument, which is what forced three Greenfield test files to be
 edited (`impact-analysis.md` §5). *Neutral:* a deployment could substitute a synchronised clock
 without touching the domain.
+
+---
+
+## ADR-012 {#adr-012}
+### The database's clock is authoritative for expiry, and the redirect path pays nothing for it
+
+**Status** Accepted · **Scenario** 02-brownfield · **Supersedes** [ADR-011](#adr-011) ·
+**Reversibility** Reversible
+
+**Context.** ADR-011 introduced a `TimeSource` port and implemented it with `Clock.systemUTC()`.
+Review found that this **contradicted the requirement the same ADR cited**. A-12 asks for one
+authoritative clock; `Clock.systemUTC()` gives every instance its own. ADR-011 even names the
+failure mode in its own justification — *"several stateless instances each calling `Instant.now()`
+means several clocks that disagree"* — and then shipped exactly that, one abstraction layer down.
+The port made the clock *testable*, and testability was quietly substituted for the *correctness*
+property that had actually been approved.
+
+This is the specific drift Article IV exists to catch: an implementation that satisfies the shape
+of a requirement while dropping its content. It passed 251 tests, because every one of them
+injected a fixed clock — the tests asserted the port was used, never that the clock behind it was
+shared.
+
+**Decision.** Time comes from the database.
+
+- **Redirect path.** The lookup already goes to the database. A native projection selects
+  `CURRENT_TIMESTAMP` **alongside the row**, returning `ResolvedLink(link, observedAt)`. The
+  lifecycle decision is made against the same reading, from the same authority, in the same
+  round trip.
+- **Create path.** `DatabaseTimeSource` issues one `select CURRENT_TIMESTAMP` to validate that a
+  submitted expiry is in the future. Creation is low-volume; a round trip there is affordable.
+- **Analytics.** Returns `ResolvedLink` too, so the reported `ACTIVE`/`EXPIRED` cannot disagree
+  with what the redirect path would do a millisecond later.
+
+**Why not just deploy NTP?** Because that moves a correctness property into an operational
+assumption, and puts it somewhere no test can see it. Clock skew across instances is not
+hypothetical — it is the ordinary state of a fleet.
+
+**Why the redirect path costs nothing.** The alternative — asking the database for the time and
+*then* asking for the row — doubles the round trips on the only path that carries load. Selecting
+the clock alongside the row is the same query. Correctness here was a matter of *where* the value
+was read, not how much work was done.
+
+**Consequences.**
+
+*Positive:* every instance decides expiry against one clock, and the guarantee is structural
+rather than operational. The hot path is unchanged in cost.
+
+*Negative — and it bit immediately.* A native query surrenders two things JPQL was hiding:
+
+1. **The SQL is no longer portable by default.** The first implementation used PostgreSQL's
+   `statement_timestamp()`, which does not exist in H2 — breaking the demo profile outright, in
+   two places. Now `CURRENT_TIMESTAMP`, which is standard SQL. The precision `statement_timestamp()`
+   would buy inside a long transaction is not observable in either call site here.
+2. **The returned Java type is the driver's choice, not the schema's.** PostgreSQL yields
+   `java.sql.Timestamp` for `timestamptz`; H2 yields `OffsetDateTime`. A projection declaring
+   either one works on one database and throws on the other. The projection therefore declares
+   `Object` and normalises through `JdbcInstants`, which accepts both and **fails loudly** on
+   anything else — a wrong zone assumption would not crash, it would expire links in the wrong
+   hour.
+
+*Neutral:* `TimeSource` survives as a port, so a deployment could substitute another authoritative
+source without touching the domain. ADR-011's reasoning was not wrong; its implementation was.
+
+**What this cost, and the lesson kept.** Both portability defects were invisible to a suite of 252
+passing tests, because every integration test in this repository runs against real PostgreSQL —
+correctly, since most of what they assert *is* PostgreSQL behaviour. The demo profile, which is the
+first thing a reviewer without Docker runs, had **no automated coverage at all**. That gap is now
+closed by `DemoProfileIT`, which needs no Docker. The general form is worth stating: *a test
+suite's blind spots are shaped by its fixtures, and the paths a suite cannot see are exactly the
+paths nobody is watching.*

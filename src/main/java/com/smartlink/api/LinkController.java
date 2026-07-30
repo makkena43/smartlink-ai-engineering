@@ -6,7 +6,7 @@ import com.smartlink.api.dto.CreateLinkResponse;
 import com.smartlink.application.CreateLinkUseCase;
 import com.smartlink.application.ReadAnalyticsUseCase;
 import com.smartlink.domain.Link;
-import com.smartlink.domain.port.TimeSource;
+import com.smartlink.domain.ResolvedLink;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -40,17 +40,14 @@ public class LinkController {
 
   private final CreateLinkUseCase createLink;
   private final ReadAnalyticsUseCase readAnalytics;
-  private final TimeSource timeSource;
   private final String baseUrl;
 
   public LinkController(
       CreateLinkUseCase createLink,
       ReadAnalyticsUseCase readAnalytics,
-      TimeSource timeSource,
       @Value("${smartlink.base-url}") String baseUrl) {
     this.createLink = createLink;
     this.readAnalytics = readAnalytics;
-    this.timeSource = timeSource;
     // Trailing slash normalised once, here. Getting this wrong produces short URLs with a
     // double slash - which mostly work, so it would ship, and every link issued in the
     // meantime would carry it.
@@ -66,7 +63,11 @@ public class LinkController {
               + "irreversibly.")
   @ApiResponses({
     @ApiResponse(responseCode = "201", description = "Created"),
-    @ApiResponse(responseCode = "400", description = "Request could not be parsed"),
+    @ApiResponse(
+        responseCode = "400",
+        description =
+            "Request could not be parsed, or expiresAt is malformed, zone-less or "
+                + "not in the future (INVALID_EXPIRY)"),
     @ApiResponse(responseCode = "422", description = "Destination refused by policy"),
     @ApiResponse(responseCode = "503", description = "Dependency unavailable")
   })
@@ -92,7 +93,8 @@ public class LinkController {
     @ApiResponse(responseCode = "404", description = "Unknown or malformed code")
   })
   public AnalyticsResponse analytics(@PathVariable String code) {
-    Link link = readAnalytics.read(code);
+    ResolvedLink resolved = readAnalytics.read(code);
+    Link link = resolved.link();
 
     return new AnalyticsResponse(
         link.code().value(),
@@ -100,8 +102,9 @@ public class LinkController {
         link.createdAt(),
         link.totalRedirects(),
         link.expiresAt(),
-        // Computed at read time rather than stored: a stored status would be wrong from the
-        // instant it was written and would need a job to keep it true.
-        link.lifecycleAt(timeSource.now()).name());
+        // Derived at read time from the DATABASE's clock, not stored and not read locally.
+        // Stored status would be wrong the instant after it was written; a local clock would
+        // let analytics disagree with the redirect path about the same link.
+        resolved.lifecycle().name());
   }
 }

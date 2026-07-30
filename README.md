@@ -11,7 +11,7 @@ Spec-Driven Development (SDD), Java 21 and Spring Boot 3.
 end to end. Scenario 03 (ambiguous — reliability) is specified but not implemented.
 
 ```
-./mvnw verify   251 tests, 0 failures     line 92.7 %   branch 78.9 %
+./mvnw verify   258 tests, 0 failures     line 92.6 %   branch 78.7 %
 smoke-test.sh    25 checks, 0 failures    against docker compose
 trivy             0 HIGH/CRITICAL         dependencies · secrets · image
 spotbugs          0 findings at HIGH

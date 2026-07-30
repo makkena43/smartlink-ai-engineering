@@ -1,7 +1,7 @@
 package com.smartlink.application;
 
 import com.smartlink.application.exception.LinkNotFoundException;
-import com.smartlink.domain.Link;
+import com.smartlink.domain.ResolvedLink;
 import com.smartlink.domain.ShortCode;
 import com.smartlink.domain.port.LinkRepository;
 import org.springframework.stereotype.Service;
@@ -15,6 +15,10 @@ import org.springframework.stereotype.Service;
  *
  * <p>Returns counters only. There is no per-request data to return because none is stored, and none
  * is stored because the schema has nowhere to put it (NFR-13).
+ *
+ * <p>Returns the link paired with the database's clock so the reported ACTIVE/EXPIRED status is
+ * decided by the same authority as the redirect itself. Computing it from this instance's clock
+ * would let analytics call a link active while the redirect path calls it expired.
  */
 @Service
 public class ReadAnalyticsUseCase {
@@ -25,7 +29,7 @@ public class ReadAnalyticsUseCase {
     this.repository = repository;
   }
 
-  public Link read(String rawCode) {
+  public ResolvedLink read(String rawCode) {
     ShortCode code =
         ShortCode.parse(rawCode)
             .orElseThrow(() -> new LinkNotFoundException("code is not well-formed"));

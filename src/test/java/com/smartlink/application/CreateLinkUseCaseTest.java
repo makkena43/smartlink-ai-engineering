@@ -9,6 +9,7 @@ import com.smartlink.domain.CodeGenerator;
 import com.smartlink.domain.Destination;
 import com.smartlink.domain.DestinationPolicy;
 import com.smartlink.domain.Link;
+import com.smartlink.domain.ResolvedLink;
 import com.smartlink.domain.ShortCode;
 import com.smartlink.domain.port.HostResolver;
 import com.smartlink.domain.port.LinkRepository;
@@ -238,9 +239,10 @@ class CreateLinkUseCaseTest {
     }
 
     @Override
-    public Optional<Link> findByCode(ShortCode code) {
+    public Optional<ResolvedLink> findByCode(ShortCode code) {
       lookupsByCode.add(code.value());
-      return Optional.ofNullable(stored.get(code.value()));
+      return Optional.ofNullable(stored.get(code.value()))
+          .map(link -> new ResolvedLink(link, FIXED_CLOCK.now()));
     }
 
     @Override

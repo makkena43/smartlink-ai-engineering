@@ -2,9 +2,11 @@ package com.smartlink.infrastructure.persistence;
 
 import com.smartlink.domain.Destination;
 import com.smartlink.domain.Link;
+import com.smartlink.domain.ResolvedLink;
 import com.smartlink.domain.ShortCode;
 import com.smartlink.domain.port.LinkRepository;
 import com.smartlink.infrastructure.resilience.BoundedRetry;
+import com.smartlink.infrastructure.time.JdbcInstants;
 import java.time.Instant;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -92,8 +94,25 @@ public class JpaLinkRepository implements LinkRepository {
    * against the database.
    */
   @Override
-  public Optional<Link> findByCode(ShortCode code) {
-    return retry.execute(() -> jpa.findByShortCode(code.value()).map(JpaLinkRepository::toDomain));
+  public Optional<ResolvedLink> findByCode(ShortCode code) {
+    return retry.execute(
+        () -> jpa.findRowWithClock(code.value()).map(JpaLinkRepository::toResolved));
+  }
+
+  private static ResolvedLink toResolved(ShortLinkJpaRepository.LinkRowWithClock row) {
+    ShortCode code =
+        ShortCode.parse(row.getShortCode())
+            .orElseThrow(() -> new IllegalStateException("stored short code is not well-formed"));
+
+    Link link =
+        new Link(
+            code,
+            Destination.ofStoredValue(row.getDestinationUrl()),
+            JdbcInstants.toInstant(row.getCreatedAt()),
+            row.getTotalRedirects(),
+            JdbcInstants.toInstant(row.getExpiresAt()));
+
+    return new ResolvedLink(link, JdbcInstants.toInstant(row.getObservedAt()));
   }
 
   /**

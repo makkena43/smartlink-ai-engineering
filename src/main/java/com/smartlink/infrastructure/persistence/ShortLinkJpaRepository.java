@@ -63,4 +63,60 @@ public interface ShortLinkJpaRepository extends JpaRepository<ShortLinkEntity, L
       "update ShortLinkEntity s set s.totalRedirects = s.totalRedirects + 1 "
           + "where s.shortCode = :code")
   int incrementRedirectsByCode(@Param("code") String code);
+
+  /**
+   * The redirect-path lookup, returning the database's own clock alongside the row.
+   *
+   * <p>This is how A-12's "single authoritative clock, database-side" is honoured without paying
+   * for it twice. Querying {@code now()} separately would double the round trips on the path that
+   * carries the entire load; here it rides along in a result set already being fetched.
+   *
+   * <p>Native rather than JPQL because a clock function cannot be selected alongside an entity in
+   * JPQL. The cost is that column names appear literally, which is the trade for keeping the hot
+   * path at one query.
+   *
+   * <p>{@code CURRENT_TIMESTAMP} rather than PostgreSQL's {@code statement_timestamp()}: it is
+   * standard SQL and therefore also runs under the H2 demo profile. The first version used {@code
+   * statement_timestamp()} and broke that profile outright — invisible to this suite, because every
+   * integration test here runs against real PostgreSQL. Portable SQL costs nothing and is still the
+   * database's clock, which is the whole of what A-12 requires.
+   */
+  @Query(
+      value =
+          "select s.short_code as shortCode, s.destination_url as destinationUrl, "
+              + "s.created_at as createdAt, s.total_redirects as totalRedirects, "
+              + "s.expires_at as expiresAt, CURRENT_TIMESTAMP as observedAt "
+              + "from short_link s where s.short_code = :code",
+      nativeQuery = true)
+  Optional<LinkRowWithClock> findRowWithClock(@Param("code") String code);
+
+  /** Projection for {@link #findRowWithClock(String)}. */
+  interface LinkRowWithClock {
+    String getShortCode();
+
+    String getDestinationUrl();
+
+    long getTotalRedirects();
+
+    /**
+     * The three instant-valued columns are declared as {@code Object}, not {@code Instant}, and
+     * normalised by the caller.
+     *
+     * <p>This is not laziness. A native query returns whatever the JDBC driver chose: the
+     * PostgreSQL driver yields {@link java.sql.Timestamp} for {@code timestamptz}, while H2 yields
+     * {@link java.time.OffsetDateTime}. Spring Data's projection converter handles the first and
+     * throws {@code UnsupportedOperationException} on the second, so any single declared type makes
+     * this query work on one database and fail on the other. Declaring {@code Object} takes the raw
+     * value and converts it where both shapes can be handled explicitly.
+     *
+     * <p>Found by running the H2 demo profile by hand — every integration test in this repository
+     * runs against real PostgreSQL, so the test suite could not have caught it.
+     */
+    Object getCreatedAt();
+
+    Object getExpiresAt();
+
+    /** Database clock at read time — the authoritative instant for every expiry decision. */
+    Object getObservedAt();
+  }
 }

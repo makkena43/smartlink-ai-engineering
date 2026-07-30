@@ -11,6 +11,7 @@ import com.smartlink.domain.ShortCode;
 import com.smartlink.domain.port.LinkRepository;
 import com.smartlink.domain.port.TimeSource;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -81,12 +82,13 @@ public class CreateLinkUseCase {
   }
 
   /**
-   * @param expiresAt UTC instant after which the link stops resolving, or {@code null} for never
-   * @throws InvalidExpiryException the expiry is not strictly in the future (400)
+   * @param rawExpiresAt ISO-8601 instant with an offset, or {@code null} for never
+   * @throws InvalidExpiryException the expiry is malformed, zone-less, or not strictly in the
+   *     future (400 {@code INVALID_EXPIRY})
    */
-  public Link create(String rawDestinationUrl, Instant expiresAt) {
+  public Link create(String rawDestinationUrl, String rawExpiresAt) {
     Destination destination = validate(rawDestinationUrl);
-    validateExpiry(expiresAt);
+    Instant expiresAt = parseExpiry(rawExpiresAt);
 
     for (int attempt = 1; attempt <= MAX_CODE_ATTEMPTS; attempt++) {
       ShortCode candidate = generator.next();
@@ -119,16 +121,33 @@ public class CreateLinkUseCase {
    * com.smartlink.domain.LinkLifecycle} treats that same instant as already expired — accepting it
    * would create a link that is dead the moment it exists, which is never what the caller meant.
    */
-  private void validateExpiry(Instant expiresAt) {
-    if (expiresAt == null) {
-      return; // absent means non-expiring, which is always valid
+  private Instant parseExpiry(String rawExpiresAt) {
+    if (rawExpiresAt == null || rawExpiresAt.isBlank()) {
+      return null; // absent means non-expiring, which is always valid
     }
+
+    Instant expiresAt;
+    try {
+      // Parsed here rather than by the JSON binder so that a malformed value produces
+      // INVALID_EXPIRY, which is what the specification promises. Left to Jackson, binding
+      // fails before this use case is ever entered and the caller receives MALFORMED_REQUEST -
+      // a contract that holds only for values the deserialiser happened to accept.
+      //
+      // Instant.parse requires an offset, so a zone-less "2026-08-01T00:00:00" lands here as a
+      // parse failure rather than being silently interpreted in the server's zone.
+      expiresAt = Instant.parse(rawExpiresAt);
+    } catch (DateTimeParseException e) {
+      throw new InvalidExpiryException(
+          "expiry.malformed", "expiry is not an ISO-8601 instant with an offset");
+    }
+
     if (!expiresAt.isAfter(timeSource.now())) {
       // The submitted timestamp is deliberately absent from the message: it reaches the logs,
       // and the rule that input is never reflected is only worth anything if it holds
       // everywhere, not just where reflection is obviously dangerous.
       throw new InvalidExpiryException("expiry.not-in-future", "expiry is not in the future");
     }
+    return expiresAt;
   }
 
   private Destination validate(String rawDestinationUrl) {

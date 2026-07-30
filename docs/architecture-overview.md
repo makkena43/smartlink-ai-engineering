@@ -8,7 +8,7 @@ design that was intended. Where the two diverged, the divergence is recorded.
 | Runtime | Java 21.0.11, Spring Boot 3.5.16 |
 | Persistence | PostgreSQL 16, Flyway, Spring Data JPA |
 | Production code | ~2 600 lines, 39 classes |
-| Test code | ~3 900 lines, 251 tests |
+| Test code | ~4 100 lines, 258 tests |
 | Delivery | Docker Compose |
 | Status | Scenarios 01 and 02 complete; 03 (reliability) not started |
 
@@ -69,25 +69,25 @@ convention — `LayeringTest` fails the build on violation.
                         └──────────────────┬─────────────────────────────┘
                                            │
                         ┌──────────────────▼─────────────────────────────┐
-                        │  domain                            12 classes  │
+                        │  domain                            13 classes  │
                         │  DestinationPolicy · HostLiterals              │
                         │  AddressPolicy · ShortCode · CodeGenerator     │
-                        │  LinkLifecycle                                 │
+                        │  LinkLifecycle · ResolvedLink                  │
                         │  ports: HostResolver · LinkRepository          │
                         │         TimeSource                             │
                         │  ── no Spring, no JPA, no I/O ──               │
                         └──────────────────▲─────────────────────────────┘
                                            │ implements ports
                         ┌──────────────────┴─────────────────────────────┐
-                        │  infrastructure                     7 classes  │
+                        │  infrastructure                     9 classes  │
                         │  JpaLinkRepository · ShortLinkEntity           │
                         │  SystemHostResolver · BoundedRetry             │
-                        │  SystemTimeSource                              │
+                        │  DatabaseTimeSource · JdbcInstants             │
                         └────────────────────────────────────────────────┘
 ```
 
 **Why the rule earns its cost.** `DestinationPolicy` and `CodeGenerator` carry the highest branch
-density in the system, and 95 of the 251 tests exercise them — all with no Spring context and no
+density in the system, and 95 of the 258 tests exercise them — all with no Spring context and no
 database. That is only possible because DNS sits behind `HostResolver` and storage behind
 `LinkRepository`. A policy that could only be tested when DNS cooperated would be a policy whose
 tests got skipped.
@@ -127,10 +127,13 @@ submitted twice yields two independent links, because nothing ever asks whether 
                                          │
                    lookup by code ───────┼── not found ──▶ 404
                     (1 jittered retry)   │
-                                         ├── unavailable ─▶ 503, never a guess
+                    + database clock,    ├── unavailable ─▶ 503, never a guess
+                      same query         │
                                          │
                    lifecycle check ──────┼── expired ────▶ 410, NO Location   ← v2
-                    (TimeSource)         │
+                    (clock came with     │
+                     the row — no        │
+                     extra round trip)   │
                                          │
                    increment counter ────┤
                     (atomic UPDATE) ─────┴── fails ──▶ log WARN, CONTINUE
@@ -322,7 +325,7 @@ rewrite. Everything else on it is a design commitment.
 | Version | Change | Sections affected |
 |---|---|---|
 | v1 | Create, resolve, basic analytics, destination policy, resilience | all |
-| **v2** | **Optional expiration** — nullable `expires_at`, `TimeSource` port, lifecycle check on resolve, `410 Gone` | §3 resolve flow, §5 data model, §6 failure table |
+| **v2** | **Optional expiration** — nullable `expires_at`, database-authoritative clock ([ADR-012](decisions.md#adr-012)), lifecycle check on resolve, `410 Gone` | §3 resolve flow, §5 data model, §6 failure table |
 | v3 | *not started* — reliability posture | §6, §8 |
 
 ### What v2 changed, and what it deliberately did not

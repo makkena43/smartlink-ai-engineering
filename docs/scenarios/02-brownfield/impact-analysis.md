@@ -14,11 +14,12 @@ branch 77.7 %, SpotBugs 0. That number is what BC-5 is measured against.
 |---|---|---|---|
 | domain | `Link` (record) | Add `expiresAt` component | **Highest — see §5.** Constructed directly in 3 test files and 1 production file |
 | domain | `LinkLifecycle` *(new)* | Active/expired rule as a pure function | None; new type |
-| domain | `port/Clock` *(new)* | Authoritative-time port | None; new type. **No clock abstraction exists today** |
+| domain | `port/TimeSource` *(new)* | Authoritative-time port | None; new type. **No clock abstraction exists today** |
+| domain | `ResolvedLink` *(new)* | A link paired with the database's reading of "now" | None; new type. Added after review — see §8 |
 | domain | `port/LinkRepository` | `insert` gains an expiry argument | 1 implementation, 2 test fakes |
 | application | `CreateLinkUseCase` | Validate and pass expiry through | Create path only |
 | application | `ResolveLinkUseCase` | Lifecycle check between lookup and increment | **Public redirect path** |
-| application | `ReadAnalyticsUseCase` | Unchanged — returns `Link`, which gains a field | None |
+| application | `ReadAnalyticsUseCase` | Returns `ResolvedLink` so status uses the same clock as the redirect | None externally; see §8 |
 | application | `exception/LinkExpiredException` *(new)* | 410 mapping | None; new type |
 | application | `exception/InvalidExpiryException` *(new)* | 400 mapping | None; new type |
 | api | `ErrorCode` | Add `LINK_EXPIRED` (410), `INVALID_EXPIRY` (400) | Additive; existing 6 constants unchanged |
@@ -30,7 +31,8 @@ branch 77.7 %, SpotBugs 0. That number is what BC-5 is measured against.
 | api | `RedirectController` | **Unchanged.** Lifecycle is decided in the use case | None |
 | infrastructure | `ShortLinkEntity` | Nullable `expires_at` column | Mapping only |
 | infrastructure | `JpaLinkRepository` | Persist and read expiry | Mapping only |
-| infrastructure | `config/DomainConfig` | Provide the `Clock` bean | Additive |
+| infrastructure | `time/DatabaseTimeSource` *(new)* | The database's clock, create path only | Additive |
+| infrastructure | `time/JdbcInstants` *(new)* | Normalises driver temporal types | Additive; see §8 |
 | database | `V2__add_expires_at.sql` *(new)* | Nullable column | **Expand-only** |
 
 ---
@@ -121,6 +123,12 @@ also had to change, and neither is reachable by an overload:
 | `LinkRepository.insert` gains `expiresAt` | Test fakes *implement* the interface. A new abstract method must be implemented by every implementor; an overload does not remove that obligation | `CreateLinkUseCaseTest`, `ResolveLinkUseCaseTest` |
 | Use cases gain a `TimeSource` constructor argument | Tests construct them directly. A convenience overload would have to invent a clock, hiding the dependency the change exists to make explicit | `CreateLinkUseCaseTest`, `ResolveLinkUseCaseTest`, `CreateLinkIT` |
 
+> **Superseded in part by §8.** The P1 fix removed `TimeSource` from `ResolveLinkUseCase`
+> entirely — the redirect path now receives the database's clock with the row — and widened the
+> repository port to `Optional<ResolvedLink>`. The same three test files were touched again, and
+> again only their wiring. The count of edited files did not change; the reason for one of them
+> did.
+
 **Actual outcome: 3 Greenfield test files edited, and every edit is wiring.** A fixed
 `TimeSource` constant was added and two fake `insert` signatures were widened. **Not one
 assertion changed, and not one test was deleted or weakened.**
@@ -185,3 +193,80 @@ No `DROP` is issued in this release, so there is no destructive step to reverse.
 created with an expiry during the rolled-back window would resolve as non-expiring until the
 new version returns — which is a **known and accepted** consequence of expand-only rollout,
 not an oversight.
+
+---
+
+## 8. Revisions made after review
+
+This section is appended rather than folded into the sections above, because the difference
+between *what was planned* and *what review changed* is the part worth keeping.
+
+Review of the completed implementation raised three contract mismatches. All three were valid.
+
+### P1 — the clock contradicted the requirement it cited (§1, §6 BR-3)
+
+The plan called for a `TimeSource` port over `Clock.systemUTC()`, and BR-3 justified it as
+protection against "boundary flakiness from wall-clock time". That framing was the error, and it
+propagated straight into the code: it treats the clock as a *testability* problem. A-12 asks for
+something else — **one authoritative clock across instances**. `Clock.systemUTC()` gives each
+instance its own, which is precisely the failure ADR-011 named in its own justification before
+implementing it anyway.
+
+251 tests passed over this. Every one injected a fixed clock, so the suite asserted the port was
+*used* and never that the clock behind it was *shared*. A test that supplies the dependency it is
+verifying cannot see this class of defect.
+
+**Changed:** a native projection now selects `CURRENT_TIMESTAMP` alongside the row, returning
+`ResolvedLink(link, observedAt)`. The redirect path pays **no extra round trip** — the query it was
+already issuing carries the clock. `DatabaseTimeSource` covers the create path only. Analytics
+returns `ResolvedLink` so its reported status cannot disagree with the redirect's. Recorded as
+[ADR-012](../../decisions.md#adr-012), superseding ADR-011.
+
+### P2a — `410` was implemented but never published
+
+`RedirectController` returned `410` and no `@ApiResponse` documented it, so the generated OpenAPI
+document — which this repository designates as the authoritative contract — did not mention the
+new status at all. A contract that omits a reachable status is wrong in the way that matters:
+integrators generate clients from it.
+
+**Changed:** `@ApiResponse(responseCode = "410", ...)` added, plus a test asserting `/v3/api-docs`
+actually contains it. Documenting it without asserting it would have re-created the same failure
+one release later.
+
+### P2b — malformed expiry returned the wrong error code
+
+`CreateLinkRequest.expiresAt` was typed `Instant`, so Jackson rejected a malformed or zone-less
+value during deserialisation and the response was `MALFORMED_REQUEST` — before any application
+code ran. BF-03 specifies `INVALID_EXPIRY`. The caller could not distinguish "your JSON is broken"
+from "your timestamp is unusable".
+
+**The test that should have caught it did not, because it was written too loosely:** it accepted
+`isIn(BAD_REQUEST, UNPROCESSABLE_ENTITY)` and asserted nothing about the body. A test permissive
+enough to pass under two different designs is not testing the design.
+
+**Changed:** the field is now `String` and parsed in `CreateLinkUseCase`. The assertion was
+tightened to exactly `400` **and** a body containing `INVALID_EXPIRY`, and a fourth case
+(`2026-13-45T00:00:00Z` — well-formed shape, impossible date) was added.
+
+### P3 — found while verifying the P1 fix: the demo profile was broken and untested
+
+Not raised by review. Found by starting the jar under the `h2` profile by hand after the P1 fix,
+which is not something the plan called for.
+
+The native projection introduced by P1 used PostgreSQL's `statement_timestamp()`, which **does not
+exist in H2** — so every redirect under the demo profile returned `503`. Fixing that exposed a
+second layer: the projection declared `Instant`, which the PostgreSQL driver satisfies via
+`java.sql.Timestamp` and H2 does not, throwing `UnsupportedOperationException`. And `statement_timestamp()`
+appeared a *second* time in `DatabaseTimeSource`, so every create carrying an expiry also `503`ed.
+
+**None of it was visible to 252 passing tests.** Every integration test here runs against real
+PostgreSQL — the right default, since most of them assert PostgreSQL behaviour — which left the
+demo profile, the first thing a reviewer without Docker runs, with **zero automated coverage**.
+
+**Changed:** `CURRENT_TIMESTAMP` (standard SQL) in both places; `JdbcInstants` normalises whatever
+temporal type the driver returned and fails loudly on an unrecognised one; and `DemoProfileIT`
+covers create, resolve, expiry, `410`, analytics agreement and migration portability on H2 —
+needing no Docker to run.
+
+The reusable lesson is not about H2. It is that **a suite's blind spots are shaped by its
+fixtures**, and a path no fixture exercises is a path nobody is watching.

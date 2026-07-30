@@ -2,6 +2,7 @@ package com.smartlink.domain.port;
 
 import com.smartlink.domain.Destination;
 import com.smartlink.domain.Link;
+import com.smartlink.domain.ResolvedLink;
 import com.smartlink.domain.ShortCode;
 import java.time.Instant;
 import java.util.Optional;
@@ -30,7 +31,13 @@ public interface LinkRepository {
    */
   Optional<Link> insert(ShortCode code, Destination destination, Instant expiresAt);
 
-  Optional<Link> findByCode(ShortCode code);
+  /**
+   * Reads a link together with the database's clock at that moment.
+   *
+   * <p>Returning the observation rather than letting the caller ask a local clock is what makes
+   * expiry decisions consistent across instances (A-12), at no extra round trip.
+   */
+  Optional<ResolvedLink> findByCode(ShortCode code);
 
   /**
    * Records one successful redirect against a code.

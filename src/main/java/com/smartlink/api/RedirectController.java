@@ -49,6 +49,12 @@ public class RedirectController {
   @ApiResponses({
     @ApiResponse(responseCode = "302", description = "Redirect to the destination"),
     @ApiResponse(responseCode = "404", description = "Unknown or malformed code"),
+    @ApiResponse(
+        responseCode = "410",
+        description =
+            "The link existed and has passed its expiry. No Location header is sent, so a "
+                + "redirect-following client cannot reach the destination. Distinct from 404, "
+                + "which means the code never existed."),
     @ApiResponse(responseCode = "503", description = "Mapping could not be verified")
   })
   public ResponseEntity<Void> resolve(@PathVariable String code) {

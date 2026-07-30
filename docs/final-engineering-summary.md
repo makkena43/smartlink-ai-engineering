@@ -4,7 +4,7 @@
 reliability) is specified but not implemented — see §8.
 
 ```
-./mvnw verify       251 tests, 0 failures        line 92.7 %   branch 78.9 %
+./mvnw verify       258 tests, 0 failures        line 92.6 %   branch 78.7 %
 smoke-test.sh        25 checks, 0 failures       against docker compose
 trivy                 0 HIGH/CRITICAL            deps · secrets · image
 spotbugs              0 findings at HIGH
@@ -66,7 +66,7 @@ and one-way ones were escalated rather than settled in implementation.
 | Architecture | `docs/architecture-overview.md` | ✅ written from the built system |
 | ADRs | `docs/decisions.md` | ✅ 9 |
 | Scenario 02 — impact analysis, spec, tasks, validation | `docs/scenarios/02-brownfield/` | ✅ complete |
-| AI traceability ledger | `docs/ai-assisted-engineering.md` | ✅ 79 entries — 15 generated, 36 edited, **28 rejected** |
+| AI traceability ledger | `docs/ai-assisted-engineering.md` | ✅ **62 entries — 12 generated, 24 edited, 26 rejected.** Counted from the table by script, not stated from memory — see the ledger's own entry on this exact failure |
 
 ---
 

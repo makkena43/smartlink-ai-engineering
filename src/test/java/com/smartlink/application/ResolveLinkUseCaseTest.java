@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.smartlink.application.exception.LinkNotFoundException;
 import com.smartlink.domain.Destination;
 import com.smartlink.domain.Link;
+import com.smartlink.domain.ResolvedLink;
 import com.smartlink.domain.ShortCode;
 import com.smartlink.domain.port.LinkRepository;
 import com.smartlink.domain.port.TimeSource;
@@ -35,7 +36,7 @@ class ResolveLinkUseCaseTest {
   private static final TimeSource FIXED_CLOCK = () -> Instant.parse("2026-01-01T00:00:00Z");
 
   private final FakeRepository repository = new FakeRepository();
-  private final ResolveLinkUseCase useCase = new ResolveLinkUseCase(repository, FIXED_CLOCK);
+  private final ResolveLinkUseCase useCase = new ResolveLinkUseCase(repository);
 
   @Test
   @DisplayName("a known code resolves to its exact destination (GF-07)")
@@ -159,11 +160,12 @@ class ResolveLinkUseCaseTest {
     }
 
     @Override
-    public Optional<Link> findByCode(ShortCode code) {
+    public Optional<ResolvedLink> findByCode(ShortCode code) {
       if (lookupFailure != null) {
         throw lookupFailure;
       }
-      return Optional.ofNullable(links.get(code.value()));
+      return Optional.ofNullable(links.get(code.value()))
+          .map(link -> new ResolvedLink(link, FIXED_CLOCK.now()));
     }
 
     @Override
