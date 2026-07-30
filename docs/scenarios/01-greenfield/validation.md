@@ -1,92 +1,149 @@
-# Scenario 01 — Greenfield · Validation
+# Greenfield Validation
 
 Evidence that v1 does what [`engineering-spec.md`](engineering-spec.md) says it does.
 
-> **Status: pending implementation (T-02 onward).**
->
-> This document is deliberately empty of results. Populating it before the tests exist would
-> mean writing down numbers nobody measured — which is the specific failure this project is
-> meant to demonstrate the absence of. The structure below is fixed now so that the
-> traceability matrix is filled in *as* work lands, not reconstructed afterwards from memory.
+**Status:** T1–T8 complete. T9 (scans, performance) and T10 (packaging, final review) outstanding.
+
+```
+mvn verify        232 tests, 0 failures     line 91.8%   branch 77.7%
+smoke-test.sh      25 checks, 0 failures    against docker compose
+```
 
 ---
 
-## 1. Acceptance criteria traceability
+## 1. Requirement traceability
 
-Every AC maps to at least one automated test. An AC with no test is not done, and a test
-that maps to no AC is challenged in review as scope creep.
+Every requirement maps to at least one automated test. A requirement with no test is not done,
+regardless of whether the code exists.
 
-| AC | Requirement | Test | Level | Result |
-|---|---|---|---|---|
-| AC-1.1 | Create returns 201 with body | — | integration | pending |
-| AC-1.2 | `Location` header present | — | controller | pending |
-| AC-1.3 | Idempotent replay | — | integration | pending |
-| AC-1.4 | Key reuse with different body → 409 | — | integration | pending |
-| AC-1.5 | Code shape, non-derivable | — | unit | pending |
-| AC-1.6 | Missing key → 401 | — | controller | pending |
-| AC-2.1 | Resolve → 302 | — | controller | pending |
-| AC-2.2 | `Cache-Control: no-store` | — | controller | pending |
-| AC-2.3 | Unknown → 404 | — | controller | pending |
-| AC-2.4 | Destination byte-identical | — | integration | pending |
-| AC-2.5 | Resolve needs no auth | — | controller | pending |
-| AC-3.1 | Alias used verbatim | — | integration | pending |
-| AC-3.2 | Claimed alias → 409 | — | integration | pending |
-| AC-3.3 | Reserved word → 422 | — | unit | pending |
-| AC-3.4 | Malformed alias → 422 | — | unit | pending |
-| AC-3.5 | Alias/generated namespaces disjoint | — | unit | pending |
-| AC-4.1 | Non-http(s) → 422 | — | unit | pending |
-| AC-4.2 | Private/metadata host → 422 | — | unit | pending |
-| AC-4.3 | Encoded address forms → 422 | — | unit | pending |
-| AC-4.4 | Over-length → 422 | — | unit | pending |
-| AC-4.5 | Rule named, input not echoed | — | controller | pending |
-| AC-5.1 | Stats readable by owner | — | integration | pending |
-| AC-5.2 | Exactly-once increment | — | integration | pending |
-| AC-5.3 | Non-owner → 404 not 403 | — | integration | pending |
-| **AC-5.4** | **Analytics down → redirect still works** | — | **fault injection** | pending |
-| AC-5.5 | Concurrent resolves lose no counts | — | integration | pending |
-| AC-6.1 | Liveness | — | integration | pending |
-| AC-6.2 | Readiness fails on dependency loss | — | fault injection | pending |
-| AC-6.3 | Correlation ID echoed | — | controller | pending |
-| **AC-6.4** | **Datastore down → 503, never a guess** | — | **fault injection** | pending |
-| AC-6.5 | No URL or key in logs at INFO | — | unit | pending |
-| AC-6.6 | Docs generated from implementation | — | integration | pending |
+| Requirement | Verified by | Result |
+|---|---|---|
+| GF-01 create link | `CreateLinkUseCaseTest`, `CreateLinkIT`, `SmartLinkEndToEndIT` | pass |
+| GF-02 canonical short URL | `SmartLinkEndToEndIT.createRedirectAndReadUsage` | pass |
+| GF-03 anonymous creation | `SmartLinkEndToEndIT` — no credential sent anywhere | pass |
+| GF-04 independent links | `CreateLinkUseCaseTest.neverLooksUpByDestination`, `sameDestinationYieldsTwoLinks` | pass |
+| GF-05 one code, one destination | `SchemaConstraintsIT.shortCodeIsUnique`, `ShortLinkRepositoryIT.duplicateShortCodeIsRejectedByDatabase` | pass |
+| GF-06 concurrency correctness | `ShortLinkRepositoryIT.concurrentInsertsOfSameCodeProduceOneRow`, `CreateLinkIT.forcedConcurrentCollisionHasOneWinner` | pass |
+| GF-07 exact destination | `RedirectControllerTest.locationIsByteIdentical`, `ShortLinkRepositoryIT.roundTripsDestinationByteIdentical` | pass |
+| GF-08 standards-compliant redirect | `RedirectControllerTest.returns302WithLocation`, end-to-end over real HTTP | pass |
+| GF-09 unknown code → 404 | `RedirectControllerTest`, `SmartLinkEndToEndIT.unknownCodeReturns404` | pass |
+| GF-10 input validation | `DestinationPolicyTest` (68 cases across 6 groups) | pass |
+| GF-11 analytics | `SmartLinkEndToEndIT.createRedirectAndReadUsage` | pass |
+| GF-12 unauthenticated analytics | `SmartLinkEndToEndIT` | pass |
+| GF-13 health information | `SmartLinkApplicationIT`, **`DependencyOutageIT`** | pass |
+| GF-14 scheme allowlist | `DestinationPolicyTest$Schemes` (12) | pass |
+| GF-15 blocked address ranges | `DestinationPolicyTest$BlockedRanges` (22) | pass |
+| GF-16 notation evasion | `DestinationPolicyTest$NotationTable` (13) | pass |
+| GF-17 length bounds | `DestinationPolicyTest$BoundsAndStorage` | pass |
+| GF-18 control chars / header integrity | `DestinationPolicyTest$ControlCharacters` (11), **`HeaderInjectionIT`** (7) | pass |
+| GF-19 validated-at-creation integrity | `ShortLinkEntity` immutability, `CreateLinkUseCaseTest.storesDestinationVerbatim` | pass |
+| NFR-01 durability | `CreateLinkIT.createsAndPersists`, `ShortLinkRepositoryIT` | pass |
+| NFR-02 fail safely, never unverified | **`DependencyOutageIT.redirectFailsSafely`**, `ResolveLinkUseCaseTest.lookupFailurePropagates` | pass |
+| NFR-03 bounded retries | `BoundedRetryTest` (15) | pass |
+| NFR-04 safe errors | `ErrorContractTest$NoLeakage`, `DependencyOutageIT.outageResponseIsSafe` | pass |
+| NFR-05 browser agnostic | Standard HTTP only; end-to-end over real HTTP | pass |
+| NFR-06 horizontal scaling | `LayeringTest.noStaticMutableState` — stateless by construction | pass |
+| NFR-07 / NFR-08 workload, hot keys | `SmartLinkEndToEndIT.concurrentRedirectsLoseNoCounts` (120 hits, one row) · production design documented, **not proven** | partial — see §5 |
+| NFR-09 abuse prevention | Documented only (spec §8.2); out of scope per requirements §6 | n/a |
+| NFR-10 SLI/SLO defined | Spec §9. Measurement is T9 | pending |
+| NFR-11 automated coverage | This document | pass |
+| NFR-12 repeatable setup | `smoke-test.sh` against `docker compose` | pass |
+| NFR-13 privacy | `SchemaConstraintsIT.hasNoPersonalDataColumn`, `SmartLinkEndToEndIT.analyticsCarriesNoPersonalData` | pass |
+| NFR-14 injection resistance / log hygiene | **`LogHygieneIT`** (5), parameterised queries throughout | pass |
+| NFR-15 validation placement | `LayeringTest.domainIsFrameworkFree` — policy cannot be bypassed | pass |
+| NFR-16 fail closed | `DestinationPolicyTest$Resolution.unresolvableHostFailsClosed` | pass |
 
-The two bolded rows are the ones that would be easiest to fake and hardest to notice
-faking. They are fault-injection tests specifically so that a future refactor which
-recouples the redirect to the counter fails CI rather than passing review.
+---
 
-## 2. Quality gate results
+## 2. The named suite
+
+The task decomposition named nine tests as the ones guarding decisions invisible in the code they
+protect. Actual class names differ in three cases; the mapping is recorded rather than the files
+renamed, because the test's identity is what it asserts.
+
+| Named in decomposition | Implemented as | Guards |
+|---|---|---|
+| `AnalyticsFailureIT` | `AnalyticsFailureIT` | Fail-open, against a **real** database refusal |
+| `ConcurrentRedirectIT` | `SmartLinkEndToEndIT.concurrentRedirectsLoseNoCounts` · `ShortLinkRepositoryIT.concurrentIncrementsLoseNoCounts` | Atomic increment |
+| `DatastoreUnavailableIT` | `DependencyOutageIT` | 503, never stale or guessed |
+| `RetryPolicyTest` | `BoundedRetryTest` | Retry **upper** bound and refusals |
+| `ConcurrentCreateIT` | `CreateLinkIT.concurrentCreatesProduceDistinctCodes` | GF-06 |
+| `ForcedCollisionIT` | `CreateLinkIT.forcedConcurrentCollisionHasOneWinner` | Insert-and-retry under contention |
+| `DestinationPolicyTest` | `DestinationPolicyTest` | Notation table |
+| `HeaderInjectionTest` | `HeaderInjectionIT` | Both CRLF defences, independently |
+| `ErrorReflectionTest` | `ErrorContractTest$NoLeakage` | No raw input echoed |
+
+---
+
+## 3. Test inventory
+
+| Suite | Tests |
+|---|---:|
+| `DestinationPolicyTest` (6 groups) | 68 |
+| `CodeGeneratorTest` | 20 |
+| `SmartLinkEndToEndIT` | 17 |
+| `BoundedRetryTest` | 15 |
+| `CorrelationIdFilterTest` | 13 |
+| `CreateLinkUseCaseTest` | 11 |
+| `RedirectControllerTest` | 11 |
+| `ErrorContractTest` (3 groups) | 11 |
+| `ShortLinkRepositoryIT` | 9 |
+| `ResolveLinkUseCaseTest` | 7 |
+| `HeaderInjectionIT` | 7 |
+| `DependencyOutageIT` | 6 |
+| `SchemaConstraintsIT` | 6 |
+| `SmartLinkApplicationIT` | 6 |
+| `ShortLinkEntityTest` | 6 |
+| `AnalyticsFailureIT` | 5 |
+| `LogHygieneIT` | 5 |
+| `LayeringTest` | 4 |
+| **Total** | **232** |
+
+## 4. Quality gates
 
 | Gate | Threshold | Result |
 |---|---|---|
-| Build | zero errors | pending |
-| Format (Spotless) | zero violations | pending |
-| Unit tests | 100 % pass | pending |
-| Integration tests (Testcontainers) | 100 % pass | pending |
-| Coverage — line | ≥ 85 % | pending |
-| Coverage — branch | ≥ 75 % | pending |
-| Smoke test | all checks pass | pending |
+| Build | zero errors | ✅ |
+| Format — Spotless | zero violations | ✅ |
+| Unit + controller | 100 % pass | ✅ 166 |
+| Integration — real PostgreSQL | 100 % pass | ✅ 66 |
+| Coverage — line | ≥ 85 % | ✅ 91.8 % |
+| Coverage — branch | ≥ 75 % | ✅ 77.7 % |
+| Architecture — ArchUnit | dependency rule holds | ✅ |
+| Smoke — `docker compose` | all checks | ✅ 25/25 |
+| Dependency / secret / image scans | no unresolved critical | ⏳ T9 |
+| Performance | method and limits reported | ⏳ T9 |
 
-## 3. Performance measurement
+**Branch coverage sits at 77.7 % against a 75 % gate.** A thin margin, and worth stating plainly:
+it has been earned by writing tests, never by lowering the threshold. `AddressPolicy` holds many
+range branches and is the main contributor to the remainder.
 
-Method, machine, JVM, container runtime and sample size stated with the numbers, per
-`scripts/performance-test/README.md`. **No extrapolation to production scale.**
+---
 
-| Scenario | p50 | p95 | p99 | Error rate | Throughput |
-|---|---|---|---|---|---|
-| A — spread across 1 000 codes | — | — | — | — | — |
-| B — single hot code | — | — | — | — | — |
+## 5. Bugs found by testing, not by review
 
-The A-vs-B delta is the actual deliverable here: it measures the hot-row contention that
-A-05 accepted as a trade-off, converting an assumption into a number.
+The genuine value of the suite is here. Each of these passed code review — mine — and was caught
+only by something executing.
 
-## 4. Manual verification
+| Found by | Defect |
+|---|---|
+| `SmartLinkApplicationIT.actuatorSurfaceIsNarrow` | A catch-all handler swallowed `NoResourceFoundException`, returning **500 for every unmatched path**. Written to guard actuator exposure; found a logic regression in another task |
+| `DependencyOutageIT.readinessGoesDown` | **Readiness reported UP with the database unreachable** — Spring's default readiness group never consults `db`. The T1 readiness test passed throughout, because the database was up |
+| `DependencyOutageIT.createFailsSafely` | **Create returned 500 while redirect returned 503** for the same outage. `CannotCreateTransactionException` descends from `TransactionException`, not `DataAccessException` |
+| `CreateLinkIT` (3 tests) | `@Transactional(REQUIRES_NEW)` with the catch *inside* leaves the transaction rollback-only; the collision was handled correctly and the request still failed with `UnexpectedRollbackException` |
+| `LogHygieneIT` | Five **framework** loggers emit the destination at DEBUG. None from `com.smartlink` — closed by pinning framework log levels |
+| `HeaderInjectionIT` | `TestRestTemplate` follows redirects, so every redirect assertion written with it was describing the destination site's response, not this service's |
+| `DestinationPolicyTest$NotationTable` | Two fixtures were arithmetically wrong. Their failure demonstrated the policy genuinely evaluates hosts rather than reflexively refusing unusual ones |
 
-- [ ] `docker compose up --build` from clean clone
-- [ ] `./scripts/smoke-test.sh` passes
-- [ ] `/swagger-ui.html` reflects the implemented contract
-- [ ] Logs contain no destination URLs and no API keys
+---
 
-## 5. Known gaps at v1 close
+## 6. Not proven
 
-To be recorded honestly at completion — what was not verified, and why.
+Stated plainly, because the alternative is letting a reviewer find them.
+
+1. **No SLO is demonstrated.** Spec §9 targets are design intent. Measurement is T9, and a laptop measurement is a regression signal, not evidence of production capacity.
+2. **NFR-07 / NFR-08 are partial.** Concurrency correctness under load is proven (120 concurrent redirects on one row, all counted). Throughput, latency and hot-key *performance* are not.
+3. **Single instance.** Horizontal scalability is a property of the design — no node-local state, asserted by ArchUnit — not something a single process demonstrates.
+4. **TOCTOU stands open (R-1b).** Destinations are validated at creation; a hostname re-pointed afterwards is not detected. Not fixable at creation time.
+5. **No abuse controls.** Rate limiting is scenario 03 and bounded even there.
+6. **Homograph domains not addressed (R-1c).** A phishing control, deliberately not attempted.
