@@ -38,7 +38,8 @@ writing, before writing code, and keeps a record of who decided what.
 **Only prerequisite: a Java 21 JDK.** The Maven wrapper fetches Maven itself.
 
 ```bash
-git clone <repo> && cd smartlink-ai-engineering
+git clone https://github.com/makkena43/smartlink-ai-engineering.git
+cd smartlink-ai-engineering
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=h2
 ```
 
@@ -190,7 +191,7 @@ ambiguity registers, task envelopes, traceability, quality gates, secure AI usag
 sign-off — written *before* the first specification.
 
 The traceability ledger classifies every material AI contribution as `GENERATED`, `EDITED` or
-`REJECTED`. **It contains 28 rejections** — among them a dependency version verified against a
+`REJECTED`. **It contains 33 rejections** — among them a dependency version verified against a
 stale search index, a `@Transactional` annotation that could not do what it appeared to,
 a mocked failure that would have proven nothing, and a test client that silently followed the
 very redirects it was meant to be asserting on.
@@ -208,7 +209,7 @@ Detail: [`docs/ai-assisted-engineering.md`](docs/ai-assisted-engineering.md).
 | Unit | `mvn test` | Code generation, destination policy — no Spring, no database |
 | Controller | `mvn test` | Status codes, headers, problem+json, route precedence |
 | Integration | `mvn verify` | Real PostgreSQL via Testcontainers; migrations; unique-code races |
-| Fault injection | `mvn verify` | Analytics down → redirect still works; datastore down → 503, never a guess |
+| Fault injection | `mvn verify` | Analytics down → redirect still works; datastore down → 503, never a guess; datastore **slow** → bounded 503, not a held thread; readiness recovers unaided; in-flight request survives shutdown |
 | End-to-end acceptance | `./scripts/smoke-test.sh` | Full reviewer path against the Docker Compose stack |
 
 Coverage gates at 85 % line / 75 % branch — a **floor, not a target**. A high number over
