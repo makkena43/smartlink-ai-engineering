@@ -1,256 +1,279 @@
-# Scenario 01 — Greenfield · Requirements
+# Greenfield Requirements — SmartLink URL Shortener
 
-**Requirement as received:** *"Build a URL shortener with redirect and basic analytics."*
-
-- **Scenario type:** Greenfield — new system, nothing to preserve
-- **Status:** Draft — awaiting Gate A
+- **Scenario:** 01 — Greenfield
+- **Status:** Revision 2 — awaiting Gate A
 - **Engineer of record:** Srinivas Makkena
-- **Governs:** [`docs/ai-assisted-engineering.md`](../../ai-assisted-engineering.md)
-
-> This document is **requirement understanding**: what is being built, for whom, and what
-> the sentence above failed to say. It names no framework, library, class or table — those
-> live in [`engineering-spec.md`](engineering-spec.md) and
-> [`docs/decisions.md`](../../decisions.md), and are settled only once the problem here is
-> agreed to be the right problem.
 
 ---
 
-## 1. Intent
+## 1. Product objective
 
-Exchange a long URL for a short, durable, publicly resolvable identifier; resolve that
-identifier back to its destination fast enough to sit in the hot path of a user's
-navigation; and record enough about each resolution to answer *"is this link being used?"*
+SmartLink enables users to create compact links for long web destinations, share those links,
+redirect recipients to the registered destination, and view basic link usage information.
 
-The value is not string compression. It is that **the short link becomes the stable public
-handle for a destination** — printed, pasted into messages, embedded in campaigns — while
-the system retains the ability to observe what happens when it is used. Durability, because
-printed links outlive deploys. Latency, because a redirect sits between a click and the
-thing the user actually wanted. Observability, because a link nobody can measure is a link
-nobody can justify.
+The Greenfield prototype must be runnable end-to-end and demonstrate a production-minded
+approach to correctness, security, resilience, scalability, and safe change management.
 
----
+## 2. Users and primary journeys
 
-## 2. Scope boundary across the three scenarios
-
-One evolving codebase, three changes in requirement. This document covers **v1 only**.
-
-| Version | Requirement | Why it sits here |
-|---|---|---|
-| **v1 — Greenfield** *(this)* | Create, redirect, basic analytics, validation | Nothing exists; the work is design from first principles |
-| **v2 — Brownfield** | *"Add expiration so campaigns can stop redirecting after a defined time."* | Touches schema, creation API, redirect logic, migration, backward compatibility, docs and tests — real codebase reasoning without inventing a second product |
-| **v3 — Ambiguous** | *"Improve reliability."* | Underspecified by construction; the engineering work is the disambiguation |
-
-**v1 must not pre-build v2 or v3.** Where a v1 decision constrains them, it is recorded in
-§4 rather than silently resolved.
-
----
-
-## 3. Actors
-
-| Actor | Need | Consequence for design |
-|---|---|---|
-| **API consumer** (campaign tool, internal service) | Create links programmatically and retry safely | Machine-readable errors; explicit idempotency |
-| **Link visitor** (public, untrusted, highest volume) | Reach the destination immediately | Latency budget; no auth on resolve; hostile input assumed |
-| **Link owner** | Know whether the link is being used | Analytics readable per link, owner-scoped |
-| **Operator** | Know the service is healthy; diagnose failures | Health, readiness, correlation IDs, structured logs |
-
-The visitor is the highest-volume and least-trusted actor. The read path and the write path
-therefore carry different security postures and very different load profiles — the single
-most load-bearing fact in [`architecture-overview.md`](../../architecture-overview.md).
-
----
-
-## 4. Ambiguity Register
-
-Ten items were genuinely open in that one sentence. Each resolution carries rationale, blast
-radius and reversibility. Silent resolution is the failure mode this register exists to
-prevent: a choice absorbed into an implementation becomes invisible in the diff and is
-discovered only in production.
-
----
-
-### A-01 — Which redirect status code?
-
-Both 301 (Permanent) and 302 (Found) are used by real shorteners, with opposite
-consequences.
-
-| Reading | Consequence |
+| User | Goal |
 |---|---|
-| **301 Permanent** | Browsers and intermediaries cache aggressively and **stop contacting the service**. Fastest for repeat visitors. |
-| **302 Found** | Every click reaches the service. |
-| 307 / 308 | Method-preserving variants; irrelevant, resolution is GET-only. |
+| Link creator | Submit a destination URL and receive a short URL that can be shared. |
+| Link recipient | Open a short URL and be redirected to the registered destination in the same client. |
+| Operator | Determine whether the service is healthy and diagnose safe, customer-facing failures. |
 
-**Chosen: 302 Found, with `Cache-Control: no-store`.**
+## 3. In-scope functional requirements
 
-**Rationale.** The requirement asks for analytics *in the same sentence* as redirect. A 301
-makes analytics structurally incomplete: once cached, repeat clicks never reach the service,
-and the undercount is unbounded and unknowable — you cannot even measure how much you are
-missing. A 301 is also functionally irreversible in the wild, because cached responses
-cannot be recalled. Going 302 → 301 later is a config change; going 301 → 302 is impossible
-for clients that already cached. **That asymmetry decides it**, not the latency difference.
-Speed is recovered server-side, where it stays under our control.
+| ID | Requirement type | Requirement |
+|---|---|---|
+| GF-01 | Core link creation | The system shall accept a valid HTTP or HTTPS destination URL and create a unique short code. |
+| GF-02 | Core link creation | The system shall return a canonical short URL containing the created short code. |
+| GF-03 | Access policy | The prototype shall allow anonymous link creation. |
+| GF-04 | Link lifecycle policy | Each successful create-link request shall create an independent short link, including when the same destination URL was previously submitted. |
+| GF-05 | Data correctness | The system shall ensure that one short code identifies only one destination URL. |
+| GF-06 | Concurrency correctness | The system shall preserve correctness when concurrent create-link requests are processed. |
+| GF-07 | Core redirect behavior | When an active short code is found, the system shall redirect the recipient to the exact registered destination URL. |
+| GF-08 | Client compatibility | The redirect shall work in the same standards-compliant requesting client without requiring client-side software or a separate browser context. |
+| GF-09 | Error behavior | When a short code is not found, the system shall not redirect and shall return a clear not-found response. |
+| GF-10 | Input validation | The system shall reject malformed destination URLs and unsupported URL schemes with a client error. |
+| GF-11 | Analytics | The system shall expose basic analytics for a known short link, including its total successful redirect count. |
+| GF-12 | Analytics access policy | Basic analytics for a known short code shall be available without authentication in the prototype. |
+| GF-13 | Operational capability | The system shall expose operational health information suitable for local checks and future automated routing decisions. |
+| **GF-14** | **Security / destination policy** | **The system shall reject destination URLs whose host resolves to private, loopback, link-local, or cloud-metadata address ranges, including decimal, octal, and IPv6-mapped encodings of those addresses.** |
+| **GF-15** | **Security / destination policy** | **The system shall reject destination URLs exceeding a documented maximum length.** |
+| **GF-16** | **Routing safety** | **Resolution of a short code shall never shadow an application route, and the precedence between the two shall be explicit rather than incidental.** |
+| **GF-17** | **Analytics resilience** | **A failure to record a redirect shall not prevent that redirect from being served.** |
+| **GF-18** | **Diagnostics** | **Every response shall carry a correlation identifier, echoed from the caller when one is supplied.** |
 
-**Blast radius if wrong:** more origin traffic, marginally slower repeat clicks.
-**Reversibility:** *Reversible* toward 301. *One-way* in the other direction. → ADR-001
+## 4. Quality and operational requirements
 
----
+| ID | Requirement type | Requirement |
+|---|---|---|
+| NFR-01 | Reliability / durability | The system shall preserve registered link mappings across normal application restarts. |
+| NFR-02 | Reliability / safety | The system shall fail safely and shall never issue an unverified or incorrect redirect. |
+| NFR-03 | Resilience | When a required dependency temporarily fails, the system shall make only bounded retry attempts and shall return a safe failure response when a verified mapping cannot be resolved. |
+| NFR-04 | Security | Client-facing errors shall be actionable but shall not expose stack traces, credentials, database details, hostnames, or other sensitive implementation information. |
+| NFR-05 | Compatibility | The system shall be browser agnostic for standards-compliant HTTP clients. |
+| NFR-06 | Scalability | The production design shall support horizontal scaling of redirect capacity. |
+| NFR-07 | Performance / workload | The production design shall support a read-heavy, burst-prone workload in which redirects substantially exceed link-creation requests. |
+| NFR-08 | Performance / hot-key resilience | The production design shall remain responsive when a small number of short links receive disproportionately high traffic. |
+| NFR-09 | Security / abuse prevention | The production design shall define protection for customer-facing endpoints against abusive or excessive request rates. |
+| NFR-10 | Observability / SLO | The system shall define measurable objectives for redirect availability, redirect latency, and error rate. |
+| NFR-11 | Quality / testability | The system shall provide automated coverage for critical successful and failure paths. |
+| NFR-12 | Operability | The repository shall provide repeatable setup, execution, and validation instructions. |
+| NFR-13 | Privacy | The prototype shall not collect IP address, geographic location, browser, device, referrer, or other personal data. |
+| **NFR-14** | **Security / log hygiene** | **Destination URLs shall not be written to application logs at INFO level or below.** |
+| **NFR-15** | **Security / enumeration resistance** | **Short codes shall not be sequential, and shall not be derivable from a known adjacent code.** |
+| **NFR-16** | **Data integrity** | **A short code, once issued, shall never be reassigned to a different destination.** |
 
-### A-02 — Does shortening the same URL twice return the same code?
+## 5. Scope assumptions
 
-**Chosen: no implicit deduplication. Each creation yields a new code; retry-safety comes
-from an explicit idempotency key.**
+- Only HTTP and HTTPS destination URLs are supported.
+- The prototype supports anonymous link creation.
+- The prototype does not maintain link-creator identity.
+- The prototype does not enforce per-creator quotas.
+- Every valid create-link request produces a new independent short link.
+- Basic analytics means total successful redirect count only.
+- Basic analytics are publicly accessible to a caller who knows the short code.
+- Links remain active indefinitely in this Greenfield scope unless the service cannot resolve them.
+- The prototype targets one primary deployment region.
+- The production design must support customers in that primary region with low-latency redirects and resilient operation.
+- The supported delivery target is a documented local end-to-end runtime.
+- Exact traffic targets, SLI/SLO values, short-code format, redirect status behavior, persistence technology, deployment mechanics, retry settings, and error-response schema are engineering-spec decisions.
 
-**Rationale.** Implicit dedup silently makes two independent links share a fate: two
-campaigns pointing at the same landing page merge into one analytics bucket, and the merge
-is **not separable afterwards** — the per-campaign data was never recorded. Since analytics
-is in v1, that loss is immediate rather than theoretical. Explicit idempotency delivers the
-real underlying requirement (safe retries) without conflating distinct intents.
+## 6. Explicitly out of scope for the prototype
 
-**Reversibility:** *Reversible.*
+- Production authentication and authorization for link creators
+- Per-user or per-client quotas
+- Implemented distributed rate limiting and abuse protection
+- Custom aliases and branded domains
+- Link update, deletion, expiration, or scheduled lifecycle management
+- QR code generation
+- Detailed event analytics, analytics dashboard, or personal-data collection
+- Global multi-region routing, replication, and disaster recovery
+- Cloud infrastructure, blue-green/canary deployment automation, and automated rollback
+- Production cache, read replicas, event streaming, CDN, and hot-key mitigation infrastructure
+- Formal penetration testing and a full chaos-engineering platform
 
----
+## 7. Acceptance criteria
 
-### A-03 — What does "basic analytics" mean?
+1. A valid HTTP or HTTPS destination URL can be shortened and returns a unique short URL.
+2. Opening a known short URL redirects the requester to exactly the registered destination in the same HTTP client.
+3. Invalid destination URLs receive a safe client error.
+4. An unknown short code returns a safe `404 Not Found` response and does not redirect.
+5. A known short code exposes its total successful redirect count.
+6. Concurrent create-link requests do not create conflicting short-code mappings.
+7. A dependency-resolution failure results in a safe temporary-failure response and never redirects to an unverified destination.
+8. The service can be started and validated end-to-end through documented repository instructions.
+9. Automated tests cover creation, redirect, validation, not-found behavior, analytics, concurrency correctness, and dependency-failure behavior.
+10. **A destination resolving to a private, loopback, link-local, or cloud-metadata address is rejected with a client error, including when supplied in an encoded address form.**
+11. **A failure of the analytics write path does not prevent a valid redirect from being served.**
 
-**Chosen for v1: per-link aggregate counters — total resolutions, first resolution instant,
-most recent resolution instant — readable by the link owner. No per-click event rows.**
+## 8. Requirement decisions recorded by the engineer
 
-**Rationale.** "Basic" is scoped to the question an owner asks first: *is this link being
-used, and recently?* Aggregates answer that. Per-click event storage is what enables the
-questions that come later (referrer, device, geography, time series), and each carries its
-own privacy weight. Recording events "just in case" means collecting personal data before
-deciding it is needed — the wrong default.
-
-**Reversibility:** *Reversible* in the direction that matters. Aggregates can be enriched
-later; data never collected cannot be recovered retroactively, which is exactly why the
-conservative choice is correct.
-
----
-
-### A-04 — What personal data may analytics retain?
-
-Not asked by the requirement. Answered anyway, because silence defaults to collecting
-whatever is convenient.
-
-**Chosen: no client IP, no user-agent, no referrer persisted in v1. Counters only.**
-
-**Rationale.** A resolution request carries directly identifying data. Persisting it turns a
-link shortener into a behavioural tracking system and pulls the service into
-data-protection obligations — retention limits, subject access, deletion — that nothing
-asked for and that no part of this design is built to honour. In a financial-services
-context, that is a compliance surface acquired by accident.
-
-**Reversibility:** *Reversible* as chosen. **One-way if decided the other way**, since data
-collected under an unclear basis cannot be un-collected. Escalated and confirmed. → ADR-005
-
----
-
-### A-05 — Must analytics recording succeed for a redirect to succeed?
-
-**Chosen: no. Analytics fails open — a counter failure is logged and swallowed; the redirect
-still happens.**
-
-**Rationale.** The visitor's need is to reach their destination. Failing a redirect because
-a counter could not be written serves nobody: the user is blocked from a page that is
-perfectly available, in order to protect a number.
-
-Counting is synchronous in v1. The trade-off — added work on the read path, hot-row
-contention under concentrated load — is accepted knowingly, with asynchronous events as the
-documented evolution. **Verified by fault injection (AC-5.4), not by convention.** → ADR-004
-
----
-
-### A-06 — Are custom aliases allowed, and what may they contain?
-
-**Chosen: allowed. 3–32 characters, `[A-Za-z0-9_-]`, case-sensitive, namespace disjoint from
-generated codes, with a reserved-word denylist.**
-
-**Rationale.** Aliases and generated codes competing for one namespace creates both a race
-and an enumeration oracle — a caller could probe which codes exist by attempting to claim
-them. Disjoint namespaces remove the interaction rather than mitigating it. Reserved words
-protect routing prefixes (`api`, `health`, `actuator`, `admin`) and reduce impersonation
-(`login`, `verify`, `secure`). Case sensitivity is retained for namespace density; the
-usability cost is accepted. → ADR-003
-
----
-
-### A-07 — Which destinations are acceptable?
-
-**Chosen: `http` and `https` only; public destinations only. Rejected: every other scheme —
-notably `javascript:`, `data:`, `file:` — and hosts resolving to private, loopback,
-link-local or cloud-metadata ranges.**
-
-**Rationale.** A shortener is an open redirector by construction; that is its function, not
-a defect. But without scheme restriction it is also a **stored-XSS delivery mechanism** — a
-`javascript:` payload behind a link the user was told to trust. Without address restriction
-it is an **SSRF pivot** the moment any server-side component fetches the target, which
-link-preview or metadata enrichment plausibly will. Restricting at creation costs little now
-and is expensive to retrofit once such a component exists. Validation must resist bypass by
-decimal, octal and IPv6-mapped encodings.
-
-**Reversibility:** *Reversible* to widen; costly to narrow. → ADR-006
+The assessment does not specify users, identity, duplicate-destination behavior, traffic
+volume, traffic geography, availability targets, analytics detail, abuse controls, or
+deployment environment. The scope assumptions above deliberately make those decisions
+visible. The subsequent engineering specification will define the technical design, quality
+gates, resilience mechanisms, observability, and future production evolution.
 
 ---
 
-### A-08 — Who may create links?
+## 9. Rationale for requirements added at revision 2
 
-**Chosen: creation requires an API key; resolution is anonymous.**
+Each addition closes a gap where the original list permitted a compliant implementation that
+would nonetheless be wrong. They are recorded here rather than asserted, so a reviewer can
+disagree with any of them individually.
 
-**Rationale.** An anonymous creation endpoint on a public shortener is an abuse magnet —
-phishing, malware, spam — with no attribution with which to respond. A key gives
-owner-scoped analytics reads and gives v3 a subject for rate limiting. Resolution stays
-anonymous because that is the product. Keys are seeded configuration, not a user store.
+### GF-14 — Private and metadata address ranges
+
+GF-10 requires rejecting malformed URLs and unsupported schemes. `http://169.254.169.254/`
+is neither: it is well-formed and uses a supported scheme, and it is the AWS instance
+metadata endpoint.
+
+A URL shortener is an open redirector by construction — that is its function, not a defect.
+The exposure appears the moment any server-side component fetches a destination, which
+link-preview or metadata enrichment plausibly will, at which point the service becomes an
+SSRF pivot into the private network. Validating at creation costs almost nothing; retrofitting
+after such a component exists is expensive, and exploitable in the interim.
+
+Encoded forms are named explicitly because `http://2852039166/` and
+`http://0xA9FEA9FE/` are the same address, and a validator that only inspects the hostname
+string rejects neither.
+
+### GF-15 — Destination length bound
+
+Unbounded input reaching storage is a denial-of-service vector and a schema decision made by
+accident. A stated limit makes it a decision.
+
+### GF-16 — Routing precedence
+
+Short codes resolve at the root, so `/{code}` and application routes such as
+`/actuator/health` occupy the same namespace. With fixed-length random codes an accidental
+collision is very unlikely — but "unlikely" is a property of the current code format, not of
+the design. Making precedence explicit means a future change to code length or alphabet
+cannot silently begin shadowing operational endpoints.
+
+### GF-17 and acceptance criterion 11 — Analytics must fail open
+
+The original list requires analytics (GF-11) and requires never issuing an incorrect redirect
+(NFR-02), but is silent on what happens when the counter write fails. The silence permits the
+obvious implementation — one transaction covering lookup and increment — under which a
+counter failure returns an error to a visitor whose destination was perfectly available.
+
+Blocking a user from a page that works, in order to protect a number, inverts the priority
+between the product and its instrumentation. Stating it as a requirement means it is tested
+rather than assumed, which matters because the correct behaviour is invisible in the code and
+a well-meaning refactor will reverse it.
+
+**This requirement is in direct tension with NFR-08** — see open decision D-2.
+
+### GF-18 — Correlation identifier
+
+NFR-04 requires errors to be actionable without exposing internals. Those two pull against
+each other: the detail that makes an error diagnosable is usually the detail that must not be
+disclosed. A correlation identifier resolves the tension — the caller receives an opaque
+handle, and the operator can join it to internal logs.
+
+### NFR-14 — Log hygiene
+
+Destination URLs are attacker-controlled and routinely carry credentials in query strings —
+password-reset tokens, signed URLs, session identifiers. Logging them at INFO reproduces
+those secrets into every log sink, backup and aggregation pipeline that touches the service.
+NFR-04 covers what errors expose to a client; this covers what the service records about
+itself, which is a different and more persistent exposure.
+
+### NFR-15 — Enumeration resistance
+
+With anonymous creation (GF-03) and unauthenticated analytics (GF-12), possession of a code
+is the only access control that exists. Sequential codes would therefore make the entire link
+corpus — and its traffic figures — walkable by counting.
+
+This requirement is a direct consequence of GF-03 and GF-12 rather than a general principle:
+those two decisions are defensible, but they place the whole weight of confidentiality on the
+code being unguessable.
+
+### NFR-16 — Codes are never reassigned
+
+A printed or messaged short link outlives the service's memory of it. If a code can be
+reissued to a different destination, every historical holder of that link is silently
+redirected somewhere chosen by someone else, with no way to detect the substitution.
+
+Deletion is out of scope for this prototype, so nothing in the current feature set can reuse
+a code. The requirement is stated now because the **data model** either permits reuse or
+forecloses it, and that is decided during this scenario whether or not it is discussed.
+Scenario 02 introduces expiration, which is the first feature that makes the question live.
 
 ---
 
-### A-09 — May a code be reused after a link is removed?
+## 10. Open decisions requiring sign-off
 
-Removal is **not** in v1 scope. Recorded here because the v1 data model either permits code
-reuse or forecloses it, and that is decided now whether or not it is discussed.
+These are not gaps in the requirements. They are points where two requirements pull in
+different directions and the resolution changes the engineering spec.
 
-**Chosen: codes are permanently retired. Any future removal is a tombstone, never a row
-deletion.**
+### D-1 — Retry safety versus GF-04
 
-**Rationale.** A printed or messaged link outlives the service's memory of it. If `abc123`
-can be reissued to a new owner, every historical holder of that link is silently redirected
-to a destination chosen by somebody else — a link-hijacking primitive. Storage cost is
-trivial against that.
+**Tension.** GF-04 states that every successful create-link request produces an independent
+short link. Read strictly, this makes creation non-idempotent: a client that times out and
+retries cannot know whether the first attempt succeeded, and will create a duplicate link.
 
-**Reversibility:** *One-way door.* Escalated and confirmed. → ADR-002
+For a prototype with anonymous creation this is a minor cost — a stray extra row. It is
+recorded because the alternative (an optional client-supplied idempotency key, where a
+repeated key returns the original link rather than creating a second one) would be an
+*exception* to GF-04 and therefore cannot be introduced by the engineering spec without
+amending this document.
+
+| Option | Consequence |
+|---|---|
+| **A. Keep GF-04 strict** | Simplest; matches the stated assumption exactly. Retries create duplicates |
+| **B. Add an optional idempotency key** | Retry-safe. Requires GF-04 to be reworded as "each successful request without a repeated idempotency key" |
+
+**Recommendation: A.** Duplicate links are harmless here — there is no owner, no quota, and
+no analytics aggregation that a duplicate would corrupt. Option B adds an API concept and a
+uniqueness constraint to solve a problem this prototype does not actually have, and B remains
+available later as a purely additive change.
+
+### D-2 — NFR-08 (hot-key resilience) versus GF-17 (synchronous counting)
+
+**Tension.** NFR-08 requires the design to remain responsive when a few links receive
+disproportionate traffic. The straightforward implementation of GF-11 — increment a counter
+column on the link row during each redirect — makes every redirect of a hot link a write to
+**the same database row**, which serialises them. The hot-key scenario is precisely where the
+naive analytics implementation degrades worst.
+
+Note that §6 places "hot-key mitigation infrastructure" out of scope, so NFR-08 is a
+*design* obligation, not an implemented one.
+
+| Option | Consequence |
+|---|---|
+| **A. Synchronous counter, measured** | Simple and immediately consistent. Contention is real; the prototype measures it under a deliberately hot key and documents the mitigation path |
+| **B. In-process batched counter** | Removes per-request row contention. Introduces loss on ungraceful shutdown, so the count becomes approximate |
+| **C. Async event pipeline** | Correct at scale. Out of scope per §6, and unjustifiable in a prototype |
+
+**Recommendation: A, with the contention measured rather than asserted.** The measurement is
+the deliverable — it converts NFR-08 from a claim into a number, and gives the documented
+production evolution an evidence base. B trades exact counts for throughput and should be a
+decision taken against data, not ahead of it.
 
 ---
 
-### A-10 — What does "reliability" mean?
+## 11. Change log
 
-**Deferred to v3**, the designated ambiguous scenario. v1 commits only to the design targets
-in [`engineering-spec.md`](engineering-spec.md) §2 and the failure posture in AC-6.4.
-
----
-
-## 5. Out of scope for v1
-
-Named so that absence reads as decision, not oversight.
-
-- **Expiration** — v2, by design.
-- **Reliability hardening, SLO instrumentation, runbook** — v3, by design.
-- User accounts, sessions, OAuth. Key *issuance* is a product concern.
-- Link removal / revocation — deferred, though its data-model consequence is settled in A-09.
-- Link editing (mutating a destination) — deliberately excluded. It defeats the "stable public handle" premise in §1 and is a hijacking vector.
-- Caching tier — v1 reads from the system of record; read-through caching with stampede protection is the documented evolution.
-- Per-click event storage; referrer / device / geography breakdown — see A-03, A-04.
-- Web UI, custom domains, QR codes, bulk import, A/B destination splitting.
-- Rate limiting — v3.
-- Multi-region replication.
+| Rev | Change | Reason |
+|---|---|---|
+| 1 | Initial draft | — |
+| 2 | Added GF-14…GF-18, NFR-14…NFR-16, acceptance criteria 10–11 | Close security and failure-mode gaps (§9) |
+| 2 | Removed custom-alias requirements | Out of scope per §6 |
+| 2 | Removed authenticated creation and owner-scoped analytics | Superseded by GF-03 and GF-12 |
+| 2 | Recorded open decisions D-1, D-2 | Requirement tensions needing sign-off before the engineering spec |
 
 ---
 
-## 6. Gate A — approval required
+## 12. Gate A — approval required
 
-Planning may not begin until the engineer of record confirms:
-
-- [ ] §1 states the right problem.
-- [ ] The v1 / v2 / v3 boundary in §2 is correct, and v1 genuinely excludes expiry.
-- [ ] Each resolution in §4 is defensible — **particularly A-01 (302), A-04 (no PII) and A-09 (no code reuse, one-way)**.
-- [ ] §5 is acceptable.
+- [ ] The added requirements in §3 and §4 are accepted, or individually rejected with reasons.
+- [ ] **D-1** resolved — recommendation: keep GF-04 strict, no idempotency key.
+- [ ] **D-2** resolved — recommendation: synchronous counter, contention measured.
+- [ ] Acceptance criteria 10 and 11 are accepted.
 
 **Approved by:** _________________  **Date:** __________

@@ -337,7 +337,11 @@ available proof that judgment was applied rather than output accepted.
 | L-007 | NFR-5 — collision handling | **EDITED** | AI framed the requirement as a collision *probability* bound. Rephrased around *behaviour under a forced collision*: probability arguments fail silently, a test that forces the collision and asserts recovery does not |
 | L-008 | `application.yml` — Hikari timeouts | **GENERATED** | Connection timeout reduced from the 30 s default. Accepted: waiting 30 s to discover the database is gone converts one dependency outage into thread-pool exhaustion service-wide |
 
-Entries L-001 through L-008 cover the scaffold and specification phase. Implementation
+| L-009 | `01-greenfield/requirements.md` rev 2 — gap analysis | **PENDING** | Engineer-authored requirements (GF-01…GF-13, NFR-01…NFR-13) were reviewed for cases a compliant implementation could satisfy while still being wrong. Eight additions proposed: private/metadata address ranges (GF-14), destination length bound (GF-15), routing precedence (GF-16), analytics fail-open (GF-17), correlation ID (GF-18), log hygiene (NFR-14), enumeration resistance (NFR-15), no code reassignment (NFR-16). **Not yet classified — each stands or falls at Gate A, individually.** The strongest is GF-14: `http://169.254.169.254/` is well-formed and uses a supported scheme, so GF-10 as written permits it |
+| L-010 | Requirement tensions D-1, D-2 | **EDITED** | Two conflicts between engineer-authored requirements were surfaced rather than silently resolved in the engineering spec: retry-safety against GF-04's independent-link rule, and NFR-08's hot-key resilience against the obvious implementation of GF-11. Both recommendations argue **against** adding machinery — keep GF-04 strict, keep the counter synchronous and measure the contention. Recorded because the reflex on a tension like D-2 is to add a mechanism, and a prototype that batches counters before measuring contention has optimised against a guess |
+| L-011 | ADR-003 — custom alias namespace | **REJECTED** | Withdrawn once requirements §6 placed custom aliases out of scope. Retained rather than deleted: the enumeration-oracle reasoning survives the feature, and the routing-safety half of it was promoted to GF-16, which applies whether or not aliases exist |
+
+Entries L-001 through L-011 cover the scaffold and specification phase. Implementation
 entries are added as tasks land, never reconstructed afterwards.
 
 ## 4. Secure AI usage

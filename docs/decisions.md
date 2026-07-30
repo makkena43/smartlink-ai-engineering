@@ -11,7 +11,7 @@ An ADR with no negative consequences listed is an advertisement, not a decision 
 |---|---|---|---|
 | [001](#adr-001) | 302 Found, not 301 Permanent | Accepted | One-way toward 301 only |
 | [002](#adr-002) | Short codes are never reused | Accepted | **One-way door** |
-| [003](#adr-003) | Alias namespace disjoint from generated codes | Accepted | Reversible |
+| [003](#adr-003) | Alias namespace disjoint from generated codes | **Withdrawn** | n/a — feature out of scope |
 | [004](#adr-004) | Analytics synchronous and fail-open | Accepted | Reversible |
 | [005](#adr-005) | No PII in analytics | Accepted | **One-way if reversed** |
 | [006](#adr-006) | Destination scheme and address policy | Accepted | Reversible to widen |
@@ -81,7 +81,17 @@ discovered after.
 ## ADR-003 {#adr-003}
 ### Custom aliases occupy a namespace disjoint from generated codes
 
-**Status** Accepted · **Reversibility** Reversible
+**Status** **Withdrawn at requirements revision 2** — custom aliases and branded domains are
+explicitly out of scope (requirements §6). The decision is retained rather than deleted
+because the reasoning survives the feature: if aliases are ever introduced, the enumeration
+oracle described below is the trap to avoid, and re-deriving it from scratch would be waste.
+
+The one part that outlived the feature is routing safety, now carried as **GF-16** — short
+codes and application routes share the root namespace whether or not aliases exist.
+
+*Original record follows.*
+
+**Reversibility** Reversible
 
 **Context.** Custom aliases and generated codes could share one namespace or occupy
 separate ones.
