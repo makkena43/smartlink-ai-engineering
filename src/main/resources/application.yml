@@ -42,9 +42,11 @@ server:
 smartlink:
   # Base URL used to build the short link returned at creation time.
   base-url: ${SMARTLINK_BASE_URL:http://localhost:8080}
-  # API keys for link creation (A-08). Seeded configuration, not a user store.
-  # Supplied via environment only — never committed. See .env.example.
-  api-keys: ${SMARTLINK_API_KEYS:}
+  # Link creation is anonymous in the prototype (GF-03), so there is deliberately no
+  # credential configured here. Production requires authentication, authorization,
+  # quotas and rate limiting - see engineering-spec.md §8.2.
+  destination:
+    max-length: 2048
 
 management:
   endpoints:

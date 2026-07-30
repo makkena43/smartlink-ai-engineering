@@ -20,8 +20,6 @@ spring:
 
 smartlink:
   base-url: http://localhost:8080
-  # Seeded development keys. Production keys arrive via environment (see .env.example).
-  api-keys: local-dev-key-alpha,local-dev-key-beta
 
 logging:
   level:

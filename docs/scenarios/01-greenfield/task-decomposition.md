@@ -1,253 +1,250 @@
 # Greenfield Task Decomposition
 
-Every task carries **intent, constraints, acceptance criteria and technical context** — the
-envelope used to dispatch work. Open-ended instructions are not used, because they transfer
-design authority away from the engineer and produce output with no stated criterion to check
-it against.
+Full envelopes for the task table in [engineering-spec.md](engineering-spec.md) §11. Every
+task carries **intent, constraints, acceptance criteria and technical context** — the
+envelope used to dispatch work. Open-ended instructions are not used: they transfer design
+authority away from the engineer and produce output with no stated criterion to check against.
 
 Tasks are sized so their diff can be reviewed in one sitting.
 
-- **Requirements:** [`requirements.md`](requirements.md)
-- **Design:** [`engineering-spec.md`](engineering-spec.md)
+- **Requirements:** [requirements.md](requirements.md)
+- **Design:** [engineering-spec.md](engineering-spec.md)
 - **Status:** Gate C — awaiting approval
 
 ---
 
 ## Dependency graph
 
-```
-T-01 scaffold ✅ ──┬─▶ T-02 domain: code + destination policy ──┐
-                   ├─▶ T-03 schema (Flyway) ───────────────────┤
-                   └─▶ T-04 persistence adapter + ports ───────┤
-                                                               │
-        ┌──────────────────────────────────────────────────────┘
-        ├─▶ T-05 create use case   ──▶ T-08 create API
-        ├─▶ T-06 resolve use case  ──▶ T-09 resolve API
-        └─▶ T-07 stats use case    ──▶ T-10 stats API
-                                          │
-              T-11 problem+json + correlation ID ◀┤
-              T-12 retry policy + timeouts        ◀┤
-              T-13 fault-injection suite          ◀┘
-              T-14 performance harness (A / B)
-              T-15 smoke test + docs
+```mermaid
+flowchart TD
+    T1[T1 · Scaffold and runtime skeleton] --> T2[T2 · OpenAPI contract and error model]
+    T1 --> T3[T3 · Schema and migrations]
+    T1 --> T4[T4 · Domain: URL policy and code generation]
+    T3 --> T5[T5 · Create-link use case]
+    T4 --> T5
+    T4 --> T6[T6 · Redirect resolution and analytics]
+    T5 --> T6
+    T1 --> T7[T7 · Safe errors, health, logging, timeouts]
+    T5 --> T7
+    T6 --> T7
+    T5 --> T8[T8 · API, component and acceptance tests]
+    T6 --> T8
+    T7 --> T8
+    T8 --> T9[T9 · Scans, performance and resilience evidence]
+    T8 --> T10[T10 · Compose, README, validation, final review]
+    T9 --> T10
 ```
 
-T-02, T-03 and T-04 parallelise once T-01 lands. T-05…T-07 do not — they share the port
-definitions introduced by T-04, and racing them produces conflicts in exactly the interfaces
-that most need a single author.
+**T2, T3 and T4 run in parallel** once T1 lands. T4 in particular depends only on T1: the
+domain layer imports no framework and performs no I/O, so it depends on neither the contract
+nor the schema. Sequencing it behind them would delay the most exhaustively testable work in
+the project behind unrelated scaffolding.
+
+T5 and T6 are sequential — T6 builds on the persistence path T5 establishes, and racing them
+produces conflicts in exactly the interfaces that most need a single author.
 
 ---
 
-## T-01 — Scaffold and quality gates ✅ *complete*
+## T1 — Scaffold, configuration, local runtime skeleton ✅ *complete*
 
-**Intent** A buildable skeleton with every gate wired before any logic exists, so the first
-line of business code is already governed.
+**Intent** A buildable skeleton with every quality gate wired before any logic exists, so the
+first line of business code is already governed.
 **Constraints** No business logic. Gates must fail on violation, not warn.
-**Acceptance** `mvn verify` green · Spotless rejects misformatted input · coverage gate present.
-**Context** `pom.xml`, `SmartLinkApplication`, `application.yml`, `Dockerfile`, `docker-compose.yml`.
+**Acceptance** `mvn verify` green · application starts · health endpoint responds · Spotless
+rejects misformatted input · coverage gate present.
+**Context** `pom.xml`, `SmartLinkApplication`, `application.yml`, `Dockerfile`,
+`docker-compose.yml`.
 **Outcome** The format gate rejected the first generated Javadoc before a human saw it —
 recorded in the ledger as evidence the gate is load-bearing rather than decorative.
 
 ---
 
-## T-02 — Domain: short code and destination policy
+## T2 — OpenAPI contract and error model
+
+**Intent** The wire contract, agreed before implementations diverge from it.
+**Constraints** Documentation is **generated from the implementation**, never hand-maintained
+— a hand-written contract drifts silently. Error bodies never carry stack traces, SQL state,
+database messages, internal hostnames, or unescaped user input.
+**Acceptance** Spec §4 realised: the 400/422 split, the 503/500 split, `LINK_NOT_FOUND`,
+`requestId` on every error. Sample requests and responses present and accurate.
+**Context** `api/dto/*`, `api/ProblemDetailAdvice`, springdoc configuration.
+
+---
+
+## T3 — Database schema and migrations
+
+**Intent** The `short_link` table per spec §5.1.
+**Constraints** Forward-only. Unique index on `short_code`. **No `version` column** — an
+optimistic-lock version on a per-redirect counter makes concurrent redirects of one link
+collide, so the failure rate would rise with popularity, inverting NFR-08. No column able to
+hold personal data (NFR-13). No `NOT NULL` presuming Scenario 02's expiry column is absent.
+**Acceptance** NFR-01 · GF-05. Flyway migrates from empty; Hibernate `ddl-auto: validate`
+agrees with the migration.
+**Context** `src/main/resources/db/migration/V1__create_short_link.sql`.
+
+---
+
+## T4 — Domain: URL policy and short-code generation
 
 **Intent** The rules with the highest branch density in the system, isolated from Spring and
-from the database so they can be tested exhaustively and fast.
+the database so they can be tested exhaustively and fast.
 
 **Constraints**
 - **Zero framework imports** in `com.smartlink.domain`. No Spring, no JPA, no I/O.
-- DNS resolution is reached through a domain-owned port, so the policy stays unit-testable
-  with a stubbed resolver — the rule must be provable without a network.
-- Normalise **before** evaluating (spec §9.1). A validator that decides before normalising is
-  checking a string the rest of the system never sees.
-- Fail closed: unparseable, unresolvable, or ambiguous input is rejected (NFR-16).
-- Store verbatim — normalisation is for evaluation only, never rewrites the stored value.
+- DNS resolution reached through a domain-owned port, so the policy is provable with a
+  stubbed resolver and no network.
+- **Normalise before deciding** (spec §8.1). A validator that decides first is inspecting a
+  string the rest of the system never sees.
+- Evaluate the authority component *after* any `@`, and check **every** resolved address, not
+  the first.
+- Fail closed (NFR-16): unparseable, unresolvable or ambiguous input is rejected.
+- Store verbatim — normalisation is for evaluation only and never rewrites the stored value.
+- `SecureRandom` for code generation; never sequential, never destination-derived.
 
-**Acceptance** GF-14 · GF-15 · GF-16 · GF-17 · GF-18 (control characters) · GF-19 · NFR-15 ·
-NFR-16, plus code format per spec D-02.
+**Acceptance** GF-14 · GF-15 · GF-16 · GF-17 · GF-18 · GF-19 · NFR-15 · NFR-16, plus the
+7-character Base62 format from spec §2.
 - Scheme allowlist: `http`/`https` accepted; `javascript:`, `data:`, `file:`, `vbscript:`, `blob:` rejected.
-- **Table-driven** rejection across every notation in spec §9.1.3 — decimal, octal, hex, mixed, IPv6-mapped, credential-embedded — each rejected identically to its plain form.
-- Every resolved address checked, not merely the first.
+- **Table-driven** rejection across every notation in spec §8.1 — decimal, octal, hex, mixed, IPv6-mapped, credential-embedded — each rejected identically to its plain form.
 - Length bounds enforced before parsing.
-- CR / LF / NUL rejected.
-- Generated codes: 7 chars base62, not derivable from an adjacent code.
+- CR / LF / NUL / raw tab rejected.
 
 **Context** `domain/Destination`, `domain/ShortCode`, `domain/CodeGenerator`,
-`domain/port/HostResolver`. Spec §9.1, §4.
+`domain/port/HostResolver`.
 
-**Review focus** The encoding table. Evasion bugs are found by enumerating notations, not by
-reasoning about them — the failure is always an encoding nobody considered, so the table must
-be trivial to extend.
-
----
-
-## T-03 — Schema migration
-
-**Intent** The `links` table per spec §7, additive-first.
-**Constraints** Forward-only. Unique index on `code`. No `NOT NULL` that presumes Scenario
-02's expiry column is absent. No column capable of holding personal data (NFR-13).
-**Acceptance** NFR-01 · GF-05. Flyway migrates from empty; Hibernate `ddl-auto: validate`
-agrees with the migration.
-**Context** `src/main/resources/db/migration/V1__create_links.sql`.
+**Review focus** The notation table. Encoding-evasion bugs are found by enumerating
+notations, not by reasoning about them — the failure is always one nobody considered, so
+adding a row must cost a single line.
 
 ---
 
-## T-04 — Persistence adapter and ports
+## T5 — Create-link use case with collision handling
 
-**Intent** Domain-facing ports and their JPA implementation.
-**Constraints** Domain must not import JPA. Collision resolved by unique-violation retry,
-**never** check-then-insert — the latter is a race, not a slower correct answer. Parameterised
-queries only (NFR-14).
-**Acceptance** GF-05 · GF-06 · NFR-01. Forced-collision test recovers; concurrent inserts of
-one code yield exactly one row.
-**Context** `application/port/LinkRepository`, `infrastructure/persistence/*`.
-
----
-
-## T-05 — Create use case
-
-**Intent** Orchestrate validation, code allocation and persistence.
+**Intent** Orchestrate validation, code allocation and durable persistence.
 **Constraints** **No lookup by destination anywhere in this path** — that absence is what
-satisfies GF-04. Collision allowance (3 attempts) kept separate from the transient-failure
-allowance (1 retry), so an outage cannot consume the collision budget.
-**Acceptance** GF-01 · GF-02 · GF-04 · GF-06 · NFR-03. Exhausted collisions → 503, not 500.
-**Context** `application/CreateLinkUseCase`. Spec §5.1, §8.3.
+satisfies GF-04. Collision resolved by unique-violation retry, never check-then-insert; the
+latter is a race, not a slower correct answer. The 3-candidate collision allowance is kept
+separate from the 1-retry transient-failure allowance, so an outage cannot consume the
+collision budget. Parameterised queries only (NFR-14).
+**Acceptance** GF-01 · GF-02 · GF-04 · GF-05 · GF-06 · NFR-01 · NFR-03. Exhausted collisions
+return `503`, not `500`. Concurrent creates yield distinct codes with zero conflicts.
+**Context** `application/CreateLinkUseCase`, `application/port/LinkRepository`,
+`infrastructure/persistence/*`.
 
 ---
 
-## T-06 — Resolve use case
+## T6 — Redirect resolution and analytics count
 
-**Intent** Look up a code, record the resolution, return the destination.
-**Constraints** **Counter failure must not fail the redirect** (spec D-06). Datastore failure
-surfaces as 503, never a guess (NFR-02). At most one retry, jittered (spec §8.3).
-**Acceptance** GF-07 · GF-09 · GF-19 · NFR-02 · NFR-03.
-**Context** `application/ResolveLinkUseCase`. Spec §5.2.
+**Intent** Look up a code, record the redirect, return the destination.
 
-**Review focus** The fail-open branch is invisible in the code — it looks like an ordinary
-try/catch. T-13 is what keeps it true.
+**Constraints**
+- The counter is updated by a **single atomic statement**, never read-modify-write.
+- **The counter fails open.** A write failure is logged at WARN; the redirect is still served.
+- Datastore failure surfaces as `503`, never a guessed or stale destination (NFR-02).
+- At most **one** retry, jittered. Never retry not-found or non-transient errors.
+- `302` plus `Cache-Control: no-store`.
 
----
+**Acceptance** GF-07 · GF-08 · GF-09 · GF-11 · GF-12 · GF-19 · NFR-02 · NFR-03 · NFR-05.
+Concurrent redirects of one link produce a count of exactly N.
+**Context** `application/ResolveLinkUseCase`, `application/ReadAnalyticsUseCase`,
+`api/RedirectController`, `api/AnalyticsController`.
 
-## T-07 — Stats use case
-
-**Intent** Read the aggregate counter.
-**Constraints** No authentication (GF-12). No personal data in the response (NFR-13).
-**Acceptance** GF-11 · GF-12. Unknown code → 404.
-**Context** `application/ReadStatsUseCase`.
-
----
-
-## T-08 / T-09 / T-10 — HTTP surface
-
-**Intent** Translate transport to use cases and back. Nothing more.
-**Constraints** No business logic in controllers. `302` + `Cache-Control: no-store` on
-redirect. Resolution at root, management under `/api/v1`, **route matching takes precedence
-over code resolution**. `Location` emitted through the framework's header API, never by
-string concatenation (GF-18, NFR-14).
-**Acceptance** GF-02 · GF-07 · GF-08 · GF-09 · GF-11 · NFR-05.
-**Context** `api/LinkController`, `api/RedirectController`, `api/StatsController`. Spec §6.
+**Review focus** The fail-open branch is invisible in the code — it reads as an ordinary
+try/catch. T8's fault-injection test is what keeps it true across future refactors.
 
 ---
 
-## T-11 — Error model and correlation ID
+## T7 — Safe errors, health, logging, timeouts
 
-**Intent** RFC 9457 `problem+json` on every error path; a correlation ID on every response.
-**Constraints** Never emit a stack trace, SQL state, database message, internal hostname or
-connection detail. Never echo raw input unescaped. Name the violated rule.
-**Acceptance** NFR-04 · GF-18 · acceptance criterion 14, including a test asserting no
-destination URL appears in logs at INFO.
-**Context** `api/ProblemDetailAdvice`, `api/CorrelationIdFilter`. Spec §9.2.
+**Intent** Every failure path is safe, diagnosable, and bounded.
+**Constraints** Liveness must **not** fail on a dependency outage, or an orchestrator restarts
+healthy processes during a database blip. Readiness must. Timeouts configured outside source
+code. **Destination URLs never logged at INFO or below** — they routinely carry credentials in
+query strings.
+**Acceptance** GF-13 · GF-18 · NFR-04 · NFR-14, including a test asserting no destination URL
+appears in logs at INFO, and that `Location` is emitted through the framework header API
+rather than by string concatenation.
+**Context** `api/CorrelationIdFilter`, `infrastructure/resilience/*`, `application.yml`.
 
----
-
-## T-12 — Retry policy and timeouts
-
-**Intent** The asymmetric policy in spec §8.3, as a reusable, testable component.
-**Constraints** Resolve path: **at most one** retry, jittered. Never retry validation errors,
-not-found, or constraint violations. Create path: 3 collision attempts, 1 transient retry.
-`503` for dependency unavailability; `500` reserved for genuinely unexpected failures.
-**Acceptance** NFR-03 · NFR-02.
-**Context** `infrastructure/resilience/*`, `application.yml`.
-
-**Review focus** The dangerous bug here is **over**-retrying, and it stays invisible until an
-outage — at which point retries amplify load against a failing dependency and delay the 503
-the client needs in order to fail fast. Assert the *upper* bound, not just that a retry happens.
+**Review focus** The dangerous retry bug is **over**-retrying, and it stays invisible until an
+outage — at which point retries amplify load against a failing dependency and delay the `503`
+the client needs to fail fast. Assert the *upper* bound, not merely that a retry occurs.
 
 ---
 
-## T-13 — Fault-injection suite
+## T8 — API, component and acceptance tests
 
-**Intent** Prove the failure postures structurally rather than by convention.
-**Constraints** Must fail the build if a future refactor recouples the redirect to the counter.
-**Acceptance**
-- Analytics write fails → redirect still `302` with correct `Location`.
-- Datastore unavailable → `503`, never stale or guessed.
-- Readiness reflects dependency state; liveness does not.
-- Retry exhaustion → `503`, bounded attempt count asserted.
+**Intent** Prove the behaviours that would otherwise regress silently.
+**Acceptance** NFR-11, and specifically the suite in spec §10.1: `AnalyticsFailureIT`,
+`DatastoreUnavailableIT`, `RetryPolicyTest`, `ConcurrentCreateIT`, `ConcurrentRedirectIT`,
+`ForcedCollisionIT`, `DestinationPolicyTest`, `HeaderInjectionTest`, `ErrorReflectionTest`.
+**Context** `src/test/java/**`.
 
-**Context** `src/test/java/.../resilience/*IT.java`. Spec §11.2.
+`ConcurrentRedirectIT` is the one that would fail under a read-modify-write or `@Version`
+implementation — it is the executable form of the T3 constraint.
 
 ---
 
-## T-14 — Performance harness
+## T9 — Scans, performance and resilience evidence
 
-**Intent** Measure the accepted trade-off instead of asserting it.
+**Intent** Capture evidence with its limitations, rather than claims.
 **Constraints** Report machine, cores, JVM, container runtime, co-location and sample size.
 **No extrapolated scale claims.**
-**Acceptance** Scenario A (spread) and scenario B (single hot code) both measured; the A/B
-delta quantifies the row contention D-06 accepted, converting NFR-08 from a claim into a number.
-**Context** `scripts/performance-test/`. Spec §10.3.
+**Acceptance** Dependency, secret and static-analysis scans run with output retained.
+Performance measured in two scenarios — load spread across many codes, and load concentrated
+on a single hot code — where the delta quantifies the row contention spec §14 accepts,
+converting NFR-08 from a claim into a number.
+**Context** `scripts/performance-test/`.
 
 ---
 
-## T-15 — Smoke test and documentation
+## T10 — Compose, README, scenario validation, final review
 
 **Intent** Clean clone → running → verified, in one documented command.
-**Acceptance** NFR-12 · acceptance criterion 8. `scripts/smoke-test.sh` green against compose;
-README demo path accurate; `architecture-overview.md` promoted from placeholder to the final
-artifact, written from the system that actually got built.
+**Acceptance** NFR-12 · acceptance criterion 8. `docker compose up --build` from a clean
+clone; `scripts/smoke-test.sh` green; README demo path accurate; `validation.md` traceability
+matrix populated from real results; `architecture-overview.md` promoted from placeholder to
+the final artifact, written from the system that actually got built.
 
 ---
 
-## Coverage check
+## Requirement coverage
 
 Every requirement is claimed by at least one task. A requirement claimed by none is unbuilt;
 a task claiming none is scope creep.
 
 | Requirement | Task |
 |---|---|
-| GF-01, GF-02 | T-05, T-08 |
-| GF-03 | T-08 (absence of auth) |
-| GF-04 | T-05 |
-| GF-05, GF-06 | T-03, T-04 |
-| GF-07, GF-08 | T-06, T-09 |
-| GF-09 | T-06, T-09 |
-| GF-10, GF-14…GF-17 | T-02 |
-| GF-11, GF-12 | T-07, T-10 |
-| GF-13 | T-13 |
-| GF-18 | T-02, T-09, T-11 |
-| GF-19 | T-02, T-06 |
-| NFR-01 | T-03, T-04 |
-| NFR-02 | T-06, T-12, T-13 |
-| NFR-03 | T-12, T-13 |
-| NFR-04 | T-11 |
-| NFR-05 | T-09 |
-| NFR-06 | T-01 (stateless by construction) |
-| NFR-07, NFR-08 | T-14 (measured), spec §8.5 (documented) |
-| NFR-09 | spec §8.6 — documented, not implemented per requirements §6 |
-| NFR-10 | spec §10, T-14 |
-| NFR-11 | T-02…T-13 |
-| NFR-12 | T-15 |
-| NFR-13 | T-03, T-07 |
-| NFR-14 | T-04, T-09, T-11 |
-| NFR-15, NFR-16 | T-02 |
+| GF-01, GF-02 | T5 |
+| GF-03 | T2, T5 (absence of auth) |
+| GF-04 | T5 |
+| GF-05, GF-06 | T3, T5 |
+| GF-07, GF-08 | T6 |
+| GF-09 | T6 |
+| GF-10, GF-14…GF-17 | T4 |
+| GF-11, GF-12 | T6 |
+| GF-13 | T7 |
+| GF-18 | T4, T7 |
+| GF-19 | T4, T6 |
+| NFR-01 | T3, T5 |
+| NFR-02 | T6, T7, T8 |
+| NFR-03 | T7, T8 |
+| NFR-04 | T2, T7 |
+| NFR-05 | T6 |
+| NFR-06 | T1 — stateless by construction |
+| NFR-07, NFR-08 | T9 measured · spec §7.2 documented |
+| NFR-09 | spec §8.2 — documented, not implemented per requirements §6 |
+| NFR-10 | T9 · spec §9 |
+| NFR-11 | T8 |
+| NFR-12 | T10 |
+| NFR-13 | T3, T6 |
+| NFR-14 | T5, T7 |
+| NFR-15, NFR-16 | T4 |
 
 ---
 
 ## Gate C — approval required
 
-- [ ] Every requirement is claimed by a task, and the coverage table above is accurate.
+- [ ] Every requirement is claimed by a task, and the coverage table is accurate.
 - [ ] Ordering is correct and the parallelism claims hold.
 - [ ] Each task is reviewable in one sitting.
 

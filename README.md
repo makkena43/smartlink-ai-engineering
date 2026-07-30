@@ -65,17 +65,21 @@ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 ## Demo path
 
 ```bash
-# create
+# create  (anonymous - GF-03)
 curl -X POST localhost:8080/api/v1/links \
   -H 'Content-Type: application/json' \
-  -H 'X-API-Key: local-dev-key-alpha' \
-  -d '{"destinationUrl":"https://example.com/campaign","alias":"spring-sale"}'
+  -d '{"destinationUrl":"https://example.com/campaign"}'
 
 # resolve  →  302, Location: https://example.com/campaign, Cache-Control: no-store
-curl -i localhost:8080/spring-sale
+curl -i localhost:8080/aB92xK7
 
 # analytics
-curl localhost:8080/api/v1/links/spring-sale/stats -H 'X-API-Key: local-dev-key-alpha'
+curl localhost:8080/api/v1/links/aB92xK7/analytics
+
+# rejected: cloud metadata endpoint, well-formed and https-adjacent but blocked  →  422
+curl -X POST localhost:8080/api/v1/links \
+  -H 'Content-Type: application/json' \
+  -d '{"destinationUrl":"http://169.254.169.254/latest/meta-data/"}'
 ```
 
 ---

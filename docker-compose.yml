@@ -43,7 +43,6 @@ services:
       SMARTLINK_DB_USER: ${POSTGRES_USER:-smartlink}
       SMARTLINK_DB_PASSWORD: ${POSTGRES_PASSWORD:-smartlink}
       SMARTLINK_BASE_URL: ${SMARTLINK_BASE_URL:-http://localhost:8080}
-      SMARTLINK_API_KEYS: ${SMARTLINK_API_KEYS:-local-dev-key-alpha}
     ports:
       - "127.0.0.1:8080:8080"
     restart: unless-stopped
