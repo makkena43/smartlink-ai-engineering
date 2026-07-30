@@ -113,13 +113,39 @@ docker compose up -d --build
 ./scripts/smoke-test.sh
 ```
 
-Integration tests need a Docker daemon. On macOS with Colima rather than Docker Desktop,
-Testcontainers cannot find the socket by default:
+Integration tests need a running Docker daemon. Two environment problems were hit and both
+are now fixed **in `pom.xml`**, not in a developer's shell, because "works on my machine" is
+a documentation defect before it is anything else.
+
+### Docker Engine 29 rejects docker-java's default API version
+
+Testcontainers 1.21.x depends on docker-java, which ships `api.version=1.32` as its bundled
+default. Docker Engine 29 raised its **minimum** supported API to 1.40, so that default is
+refused outright.
+
+The failure is badly misleading: Testcontainers reports
+`Could not find a valid Docker environment`, which points at the socket. The socket is fine —
+the daemon is answering, with `HTTP 400: client version 1.32 is too old`.
+
+Two things that look like the fix and are not: `DOCKER_API_VERSION` (docker-java does not map
+that environment variable) and `TESTCONTAINERS_API_VERSION`. docker-java reads a **system
+property** named `api.version`, so it is set in the failsafe configuration and can be
+overridden with `-Ddocker.api.version=…` on an older daemon.
+
+### Ryuk cannot reach the socket on Colima
+
+Testcontainers' cleanup container mounts the daemon socket. `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`
+tells it the path **inside** the container, which is `/var/run/docker.sock` on every supported
+runtime even when the host-side socket lives elsewhere. Set in the failsafe configuration.
+Its absence also surfaces as an unrelated `can't get Docker image` error.
+
+### The one thing still left to the environment
+
+`DOCKER_HOST`, for Colima users only — it is machine-specific, so pinning it in `pom.xml`
+would break everyone else:
 
 ```bash
 export DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock"
-export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 ```
 
-That is captured here rather than left as tribal knowledge, because "works on my machine"
-is a documentation defect before it is anything else.
+Docker Desktop users need nothing; it is detected automatically.

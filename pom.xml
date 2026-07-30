@@ -23,6 +23,8 @@
     <!-- Coverage floor, not target. See docs/ai-assisted-engineering.md, Article VI. -->
     <jacoco.line.coverage>0.85</jacoco.line.coverage>
     <jacoco.branch.coverage>0.75</jacoco.branch.coverage>
+    <!-- See the failsafe systemPropertyVariables block for why this exists. -->
+    <docker.api.version>1.44</docker.api.version>
   </properties>
 
   <dependencies>
@@ -84,6 +86,19 @@
       <artifactId>postgresql</artifactId>
       <scope>test</scope>
     </dependency>
+
+    <!--
+      Enforces the dependency rule from engineering-spec.md §3.3. The domain layer must
+      import no framework, because that is what lets the destination policy and code
+      generation be tested with no Spring context and no database. A layering rule that
+      only exists in a document is a wish; this makes it a build failure.
+    -->
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <version>1.4.1</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -112,6 +127,29 @@
           <includes>
             <include>**/*IT.java</include>
           </includes>
+          <systemPropertyVariables>
+            <!--
+              docker-java ships api.version=1.32 as its bundled default and reads it as a
+              SYSTEM PROPERTY, not from DOCKER_API_VERSION. Docker Engine 29 raised its
+              minimum supported API to 1.40, so the bundled default is rejected outright
+              and Testcontainers reports "could not find a valid Docker environment" -
+              which points at the socket rather than at the real cause.
+
+              Pinned here rather than left to a developer's shell so a clean clone works.
+              Override with -Ddocker.api.version=... on an older daemon.
+            -->
+            <api.version>${docker.api.version}</api.version>
+          </systemPropertyVariables>
+          <environmentVariables>
+            <!--
+              Path Testcontainers' cleanup container (Ryuk) uses to reach the daemon from
+              INSIDE the container. It is /var/run/docker.sock on every supported runtime,
+              including Colima where the host-side socket lives elsewhere. Without it Ryuk
+              fails to start on Colima and the failure surfaces as an unrelated
+              "can't get Docker image" error.
+            -->
+            <TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE>/var/run/docker.sock</TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE>
+          </environmentVariables>
         </configuration>
         <executions>
           <execution>

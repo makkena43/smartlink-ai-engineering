@@ -46,13 +46,16 @@ Build and test without Docker Compose:
 mvn verify
 ```
 
-Integration tests need a Docker daemon. On macOS with **Colima** rather than Docker Desktop,
-Testcontainers cannot find the socket by default:
+Integration tests need a running Docker daemon. Two environment quirks — docker-java's
+default API version being rejected by Docker Engine 29, and Ryuk's socket path on Colima —
+are fixed in `pom.xml` rather than left to your shell. One thing is machine-specific and
+still yours, and only if you run **Colima** rather than Docker Desktop:
 
 ```bash
 export DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock"
-export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 ```
+
+Detail: [`docs/testing-strategy.md`](docs/testing-strategy.md) §6.
 
 | Surface | URL |
 |---|---|

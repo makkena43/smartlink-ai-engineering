@@ -1,0 +1,15 @@
+# Test profile.
+#
+# The datasource is supplied by Testcontainers through @ServiceConnection, so nothing here
+# points at a database. Everything else deliberately inherits from application.yml: a test
+# profile that re-declares production settings tests the override, not the shipped config.
+spring:
+  flyway:
+    clean-disabled: true
+
+logging:
+  level:
+    root: WARN
+    com.smartlink: INFO
+    org.testcontainers: WARN
+    com.github.dockerjava: WARN
