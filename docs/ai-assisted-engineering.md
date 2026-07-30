@@ -357,8 +357,27 @@ available proof that judgment was applied rather than output accepted.
 | L-023 | `task-decomposition.md` §11 T4 dependencies | **EDITED** | Draft made the domain task depend on the OpenAPI contract and the schema. Corrected to depend only on the scaffold: the domain layer imports no framework and performs no I/O, so sequencing it behind them would delay the most exhaustively testable work in the project behind unrelated scaffolding |
 | L-024 | Contract reconciliation across artifacts | **EDITED** | Adopting the reviewed spec's `/analytics` naming left committed artifacts inconsistent. `smoke-test.sh`, `api-overview.md`, `README.md`, `application.yml`, `application-local.yml`, `.env.example` and `docker-compose.yml` still carried `/stats`, `totalResolutions` and `X-API-Key` — the last contradicting GF-03 outright. All reconciled; the smoke test gained twelve destination-policy assertions and an error-reflection check |
 
-Entries L-001 through L-024 cover the scaffold and specification phase. Implementation
-entries are added as tasks land, never reconstructed afterwards.
+| L-025 | `task-decomposition.md` — requirement coverage | **EDITED** | The reviewed decomposition claimed GF-01…GF-13 and NFR-01…NFR-13 but not the ten requirements added since: GF-14…GF-19 and NFR-14…NFR-16 appeared in no task. T4 covered only "unsupported schemes and malformed inputs", so SSRF address ranges, notation evasion, CRLF and fail-closed would have been specified but never built. Added to T3, T4, T6 and T7, and a **requirement-coverage table** added as the mechanical check — the failure mode was invisible precisely because every individual task looked complete |
+| L-026 | `task-decomposition.md` T3 and T6 — invisible constraints | **EDITED** | Two decisions established during spec review had no home in the task list and would have been silently lost: the prohibition on an optimistic-lock column, and analytics fail-open. Both are the kind of constraint that is **easy to reintroduce by accident** — adding `@Version` looks like diligence, and wrapping resolution and increment in one transaction looks like correctness. Promoted to blockquote constraints on their owning tasks, each naming the test that enforces it |
+| L-027 | `task-decomposition.md` T9 — NFR-06 scope | **REJECTED** | Draft listed NFR-06 through NFR-11 as validated by T9. Removed NFR-06: horizontal scalability is established by construction in T1 and cannot be validated by a scan or a single-instance load test. Listing it would have produced a checked box against evidence that does not exist, in the one task whose purpose is honest evidence |
+
+Entries L-001 through L-027 cover the scaffold and specification phase.
+
+---
+
+## 5. Implementation ledger format
+
+From T2 onward, entries use the per-task format defined in
+[`scenarios/01-greenfield/task-decomposition.md`](scenarios/01-greenfield/task-decomposition.md) §7,
+which captures the prompt envelope and the approval alongside the classification:
+
+| Task | Intent and constraints supplied | Output used | Class | Engineer edit/rejection and rationale | Validation | Approval |
+|---|---|---|---|---|---|---|
+| *(populated as tasks land)* | | | | | | |
+
+Entries are written **as work lands, never reconstructed afterwards**. A ledger assembled at
+the end records what someone remembers deciding, which is a different and much more flattering
+thing than what they actually decided.
 
 ## 4. Secure AI usage
 
