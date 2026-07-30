@@ -1,5 +1,16 @@
 # Architecture Overview
 
+> **Status: placeholder — not the current architecture artifact.**
+>
+> The live architecture for Scenario 01 is §3 of
+> [`scenarios/01-greenfield/engineering-spec.md`](scenarios/01-greenfield/engineering-spec.md),
+> which carries both the prototype diagram and the production-evolution diagram.
+>
+> This file is written *after* implementation, from the system that actually got built, and
+> becomes the polished artifact for a reviewer. Promoting it before then would mean
+> publishing a diagram of a system that does not exist yet — and a reviewer has no way to
+> tell that kind of diagram from a real one.
+
 **This document describes the system as it is now.** It is amended at each scenario, never
 duplicated per version — a stale architecture document is worse than none, because a reader
 cannot tell which one is load-bearing. The *evolution* lives in three other places, each
