@@ -48,6 +48,16 @@ smartlink:
   destination:
     max-length: 2048
 
+  resilience:
+    # One retry, and no more. The redirect path carries the entire load, so during an outage
+    # three retries per request means three times the load against a dependency that is already
+    # failing, three times the thread-holding, and a caller who waits three times as long to be
+    # told to come back. The cap is a load-shedding decision as much as a resilience one.
+    max-retries: ${SMARTLINK_MAX_RETRIES:1}
+    # Full-jitter ceiling for the first backoff. Without jitter every in-flight request retries
+    # at the same instant and the retry becomes its own thundering herd.
+    base-backoff-ms: ${SMARTLINK_RETRY_BACKOFF_MS:50}
+
 management:
   endpoints:
     web:
@@ -59,6 +69,20 @@ management:
       probes:
         enabled: true
       show-details: never
+      group:
+        # `db` must be added explicitly. Spring's default readiness group contains only
+        # readinessState, so out of the box this endpoint reports UP with the database
+        # unreachable - and a load balancer would happily keep routing to an instance that
+        # cannot serve a single request. Caught by DependencyOutageIT; a readiness test
+        # written against a healthy database passes either way.
+        readiness:
+          include: readinessState,db
+        # Liveness deliberately does NOT include db. If it did, a transient database outage
+        # would make every instance report itself dead at once, the orchestrator would restart
+        # all of them, and the restarts would add load to the database that was already
+        # struggling - converting a recoverable dependency failure into a self-inflicted one.
+        liveness:
+          include: livenessState
   health:
     livenessstate:
       enabled: true
@@ -75,3 +99,16 @@ logging:
   level:
     root: INFO
     com.smartlink: INFO
+    # Pinned, and not merely left to inherit from root.
+    #
+    # Spring MVC logs the deserialised request body at DEBUG, which for this service means the
+    # destination URL - and destination query strings routinely carry reset tokens and signed
+    # URLs (NFR-14). Without this pin, the entirely reasonable act of setting root to DEBUG to
+    # troubleshoot something unrelated would silently start copying customer secrets into every
+    # log sink, with nothing in the change to suggest it.
+    #
+    # The application's own code never logs a destination at any level; that is asserted by
+    # LogHygieneIT. This closes the framework's half of the same exposure.
+    org.springframework.web: INFO
+    org.hibernate.SQL: INFO
+    org.hibernate.orm.jdbc.bind: INFO

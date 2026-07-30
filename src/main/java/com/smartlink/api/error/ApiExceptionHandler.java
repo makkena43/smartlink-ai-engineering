@@ -14,6 +14,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.transaction.TransactionException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -112,14 +113,21 @@ public class ApiExceptionHandler {
    * from a guess or a stale value — would break the product's only real promise, that a short link
    * goes where its owner said it goes.
    *
+   * <p>{@link TransactionException} is included because a connection failure raised while a
+   * transaction is being opened surfaces as {@code CannotCreateTransactionException}, which
+   * descends from {@code TransactionException} and NOT from {@code DataAccessException}. Without it
+   * the create path returned 500 during a database outage while the redirect path correctly
+   * returned 503 - the same failure reported two different ways depending on which endpoint you
+   * happened to hit. Found by fault injection; no healthy-database test could see it.
+   *
    * <p>Caught here rather than translated in the persistence adapter, because the adapter lives in
    * {@code infrastructure} and the exception vocabulary lives in {@code application}: translating
    * there would mean infrastructure depending on application, which the layering rule forbids.
    * Transport is the right place to decide what a failure looks like on the wire anyway.
    */
-  @ExceptionHandler(DataAccessException.class)
+  @ExceptionHandler({DataAccessException.class, TransactionException.class})
   public ResponseEntity<ProblemDetail> onDataAccessFailure(
-      DataAccessException ex, HttpServletRequest request) {
+      RuntimeException ex, HttpServletRequest request) {
     // The message may name the database, the host, or the SQL. It goes to the log and never
     // to the caller.
     log.warn("Datastore unavailable: {}", ex.getMessage());

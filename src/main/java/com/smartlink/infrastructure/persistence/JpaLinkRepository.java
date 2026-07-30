@@ -4,6 +4,7 @@ import com.smartlink.domain.Destination;
 import com.smartlink.domain.Link;
 import com.smartlink.domain.ShortCode;
 import com.smartlink.domain.port.LinkRepository;
+import com.smartlink.infrastructure.resilience.BoundedRetry;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,9 +23,12 @@ public class JpaLinkRepository implements LinkRepository {
 
   private final ShortLinkJpaRepository jpa;
   private final TransactionTemplate isolatedAttempt;
+  private final BoundedRetry retry;
 
-  public JpaLinkRepository(ShortLinkJpaRepository jpa, PlatformTransactionManager transactions) {
+  public JpaLinkRepository(
+      ShortLinkJpaRepository jpa, PlatformTransactionManager transactions, BoundedRetry retry) {
     this.jpa = jpa;
+    this.retry = retry;
     this.isolatedAttempt = new TransactionTemplate(transactions);
     this.isolatedAttempt.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
   }
@@ -53,9 +57,17 @@ public class JpaLinkRepository implements LinkRepository {
   @Override
   public Optional<Link> insert(ShortCode code, Destination destination) {
     try {
+      // The retry sees a constraint violation as non-transient and rethrows it immediately,
+      // so the collision reaches the catch below on the first attempt. That separation is
+      // what keeps the two allowances independent: a database outage cannot consume the
+      // use case's three collision candidates, and a collision cannot be mistaken for one.
       ShortLinkEntity saved =
-          isolatedAttempt.execute(
-              status -> jpa.saveAndFlush(new ShortLinkEntity(code.value(), destination.value())));
+          retry.execute(
+              () ->
+                  isolatedAttempt.execute(
+                      status ->
+                          jpa.saveAndFlush(
+                              new ShortLinkEntity(code.value(), destination.value()))));
       return Optional.of(toDomain(saved));
     } catch (DataIntegrityViolationException e) {
       // short_code carries the only unique constraint on this table, and destination_url has
@@ -67,12 +79,32 @@ public class JpaLinkRepository implements LinkRepository {
     }
   }
 
+  /**
+   * {@inheritDoc}
+   *
+   * <p>Retried, because this is the one read whose failure the caller cannot work around: a
+   * redirect cannot be served without it, and NFR-02 forbids guessing.
+   *
+   * <p>Deliberately not annotated {@code @Transactional} here. Spring Data opens a transaction per
+   * repository call, so each retry attempt gets a clean one — whereas an outer transaction would be
+   * marked rollback-only by the first failure and the retry would fail against that instead of
+   * against the database.
+   */
   @Override
-  @Transactional(readOnly = true)
   public Optional<Link> findByCode(ShortCode code) {
-    return jpa.findByShortCode(code.value()).map(JpaLinkRepository::toDomain);
+    return retry.execute(() -> jpa.findByShortCode(code.value()).map(JpaLinkRepository::toDomain));
   }
 
+  /**
+   * {@inheritDoc}
+   *
+   * <p><strong>Not retried, on purpose.</strong> The counter is fail-open: if this fails, the
+   * redirect is served anyway and the caller never learns of it. Retrying would therefore buy
+   * nothing a visitor can perceive, while adding latency to the path that carries the entire load —
+   * and doing so at exactly the moment the database is already struggling.
+   *
+   * <p>Instrumentation must not compete with the product for a failing dependency's capacity.
+   */
   @Override
   @Transactional
   public boolean recordRedirect(ShortCode code) {
