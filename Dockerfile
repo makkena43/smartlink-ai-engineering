@@ -25,7 +25,19 @@ RUN mvn -B -q clean package -DskipTests
 # ---------------------------------------------------------------------------
 FROM eclipse-temurin:21-jre-alpine AS runtime
 
-RUN addgroup -S smartlink && adduser -S -G smartlink smartlink
+# Patch OS packages before dropping privileges.
+#
+# An image scan of the unpatched base found four HIGH CVEs in libexpat and p11-kit - none in
+# this application's code, all in the distribution layer, and all with fixes already published
+# upstream. Base images lag their distributions by design, so "we use an official base image"
+# is not by itself a security position.
+#
+# The cost is honest and worth stating: this makes the image non-reproducible, because the
+# package set now depends on when the build ran. For a service that is rebuilt and rescanned
+# on every deploy that is the right trade - a reproducible image full of known-vulnerable
+# libraries is reproducibly vulnerable.
+RUN apk --no-cache upgrade \
+ && addgroup -S smartlink && adduser -S -G smartlink smartlink
 
 WORKDIR /app
 COPY --from=build --chown=smartlink:smartlink /build/target/smartlink-*.jar app.jar

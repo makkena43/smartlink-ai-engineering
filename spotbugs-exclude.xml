@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpotBugs exclusions.
+
+  Every entry here is a suppression, and a suppression is a claim that the tool is wrong.
+  Each one therefore carries the reason. An exclusion file of bare patterns is how a static
+  analysis gate quietly stops finding anything.
+-->
+<FindBugsFilter xmlns="https://github.com/spotbugs/filter/3.0.0">
+
+  <!--
+    Spring injects into fields and constructors that SpotBugs cannot see as initialisation,
+    and reports the resulting objects as exposing or storing external references. The
+    container owns those lifecycles; the finding does not apply to a managed component.
+  -->
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+  </Match>
+
+</FindBugsFilter>

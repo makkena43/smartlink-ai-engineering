@@ -7,7 +7,7 @@
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.5.3</version>
+    <version>3.5.16</version>
     <relativePath/>
   </parent>
 
@@ -25,6 +25,14 @@
     <jacoco.branch.coverage>0.75</jacoco.branch.coverage>
     <!-- See the failsafe systemPropertyVariables block for why this exists. -->
     <docker.api.version>1.44</docker.api.version>
+    <!--
+      Overrides the version Spring Boot manages, to clear CVE-2026-54291: a
+      SCRAM-SHA-256-PLUS downgrade that defeats the driver's man-in-the-middle
+      protection. Boot's managed version still carried it; this is the first fixed
+      release. Reviewed at each Boot upgrade - an override that outlives its reason
+      becomes a silent pin holding a dependency BACK.
+    -->
+    <postgresql.version>42.7.12</postgresql.version>
   </properties>
 
   <dependencies>
@@ -210,6 +218,34 @@
                 <exclude>com/smartlink/infrastructure/config/**</exclude>
               </excludes>
             </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        Static analysis. Article VI of the engineering constitution lists this as a merge gate
+        and the build did not run it until T9 - a gate that exists only in a document.
+
+        Bound to `verify` and failing on HIGH so it is a gate rather than a report nobody opens.
+        `threshold=High` keeps the signal usable: a wall of low-confidence findings is how a
+        static-analysis gate gets disabled within a month.
+      -->
+      <plugin>
+        <groupId>com.github.spotbugs</groupId>
+        <artifactId>spotbugs-maven-plugin</artifactId>
+        <version>4.9.3.0</version>
+        <configuration>
+          <effort>Max</effort>
+          <threshold>High</threshold>
+          <failOnError>true</failOnError>
+          <includeTests>false</includeTests>
+          <excludeFilterFile>spotbugs-exclude.xml</excludeFilterFile>
+        </configuration>
+        <executions>
+          <execution>
+            <id>static-analysis-gate</id>
+            <phase>verify</phase>
+            <goals><goal>check</goal></goals>
           </execution>
         </executions>
       </plugin>

@@ -2,7 +2,7 @@
 
 Evidence that v1 does what [`engineering-spec.md`](engineering-spec.md) says it does.
 
-**Status:** T1–T8 complete. T9 (scans, performance) and T10 (packaging, final review) outstanding.
+**Status:** T1–T9 complete. T10 (packaging, architecture overview, final review) outstanding.
 
 ```
 mvn verify        232 tests, 0 failures     line 91.8%   branch 77.7%
@@ -43,9 +43,9 @@ regardless of whether the code exists.
 | NFR-04 safe errors | `ErrorContractTest$NoLeakage`, `DependencyOutageIT.outageResponseIsSafe` | pass |
 | NFR-05 browser agnostic | Standard HTTP only; end-to-end over real HTTP | pass |
 | NFR-06 horizontal scaling | `LayeringTest.noStaticMutableState` — stateless by construction | pass |
-| NFR-07 / NFR-08 workload, hot keys | `SmartLinkEndToEndIT.concurrentRedirectsLoseNoCounts` (120 hits, one row) · production design documented, **not proven** | partial — see §5 |
+| NFR-07 / NFR-08 workload, hot keys | `SmartLinkEndToEndIT.concurrentRedirectsLoseNoCounts` · **hot-key contention measured**: p95 ≈ 2× and throughput ≈ 0.66× versus spread load, ratio stable across 3 runs | measured, not extrapolated |
 | NFR-09 abuse prevention | Documented only (spec §8.2); out of scope per requirements §6 | n/a |
-| NFR-10 SLI/SLO defined | Spec §9. Measurement is T9 | pending |
+| NFR-10 SLI/SLO defined | Spec §9 · measured in `RESULTS.md` | pass |
 | NFR-11 automated coverage | This document | pass |
 | NFR-12 repeatable setup | `smoke-test.sh` against `docker compose` | pass |
 | NFR-13 privacy | `SchemaConstraintsIT.hasNoPersonalDataColumn`, `SmartLinkEndToEndIT.analyticsCarriesNoPersonalData` | pass |
@@ -111,8 +111,11 @@ renamed, because the test's identity is what it asserts.
 | Coverage — branch | ≥ 75 % | ✅ 77.7 % |
 | Architecture — ArchUnit | dependency rule holds | ✅ |
 | Smoke — `docker compose` | all checks | ✅ 25/25 |
-| Dependency / secret / image scans | no unresolved critical | ⏳ T9 |
-| Performance | method and limits reported | ⏳ T9 |
+| Static analysis — SpotBugs (HIGH) | zero findings | ✅ 0 |
+| Dependency scan — Trivy | no HIGH/CRITICAL | ✅ 0 (was 22) |
+| Secret scan — Trivy | zero | ✅ 0 |
+| Container image scan — Trivy | no HIGH/CRITICAL | ✅ 0 (was 4) |
+| Performance | method and limits reported | ✅ see `scripts/performance-test/RESULTS.md` |
 
 **Branch coverage sits at 77.7 % against a 75 % gate.** A thin margin, and worth stating plainly:
 it has been earned by writing tests, never by lowering the threshold. `AddressPolicy` holds many
