@@ -279,6 +279,77 @@ of method and limits* rather than on hitting a number the environment cannot leg
 produce.
 
 **Consequence for existing artifacts.** None retroactive. No code existed at amendment time.
-`specs/spec-v1-greenfield.md` §6 was written against v1.1 and separates production design
-targets from what a laptop actually demonstrates. The deferred caching tier is carried as an
-explicit trade-off with its evolution path, not as an omission.
+`docs/scenarios/01-greenfield/engineering-spec.md` §2 was written against v1.1 and separates
+production design targets from what a laptop actually demonstrates. The deferred caching
+tier is carried as an explicit trade-off with its evolution path, not as an omission.
+
+---
+
+# Part II — AI-assisted engineering in practice
+
+Part I is the governing process. This part is what it looked like in use.
+
+## 1. Where AI was used, and what the engineer did
+
+| Activity | AI's role | Engineer's action | Evidence retained |
+|---|---|---|---|
+| **Requirement review** | Enumerate readings of an underspecified sentence and their consequences | Select the interpretation; own the rationale and the blast radius | Ambiguity registers — 10 entries in v1, 3 in v2, 5 assumptions in v3 |
+| **Architecture** | Draft options and trade-offs | Decide; record the negative consequences, not just the positive | 9 ADRs in `decisions.md` |
+| **Scaffolding and code** | Generate bounded components from explicit acceptance criteria | Read every line before commit; reject what does not fit | Ledger below; commit history per task |
+| **Test design** | Propose edge cases — invalid scheme, collision, unknown code, expiry, database failure | Decide which are load-bearing; add the ones AI missed | Traceability matrices in each `validation.md` |
+| **Debugging** | Hypothesise causes | Verify against actual output before acting | — |
+| **Documentation** | Improve clarity | Retain factual ownership; correct inaccuracies | Docs in the engineer's voice |
+
+## 2. The task envelope
+
+Prompts of the form *"write me a URL shortener"* are prohibited by Article IV.1 — they
+transfer design authority to the tool. Every task in `task-decomposition.md` instead carries
+four fields, and the AI is invoked with them:
+
+```
+Intent        the outcome, not the keystrokes
+Constraints   what it may not do or break
+Acceptance    how completion is proven, mechanically
+Context       the files, contracts and invariants it touches
+```
+
+The difference is not stylistic. An envelope makes the output *checkable* — there is a
+stated criterion it either meets or does not — whereas an open prompt produces something
+plausible that must then be evaluated against a standard nobody wrote down.
+
+## 3. Traceability ledger
+
+Article V. Every material AI contribution is classified `GENERATED` (accepted substantially
+as produced), `EDITED` (accepted after modification), or `REJECTED` (discarded).
+
+**A ledger with no rejections is evidence that review was not happening** (Article IV.4).
+Rejections are recorded with more care than acceptances, because they are the strongest
+available proof that judgment was applied rather than output accepted.
+
+| ID | Artifact | Class | Summary |
+|---|---|---|---|
+| L-001 | `pom.xml` — dependency versions | **EDITED** | Versions were queried live against Maven Central rather than recalled from training data. Spring Boot 3.5.3, springdoc 2.8.6, Testcontainers 1.21.3 confirmed to exist before adoption (Article VII.2 — hallucinated and typosquatted packages are a documented supply-chain vector against AI-assisted development) |
+| L-002 | `SmartLinkApplication.java` | **EDITED** | Generated Javadoc failed the Spotless gate on its first run. Fixed by the formatter. Recorded because it is direct evidence the gate is load-bearing rather than decorative — the first AI output into this repo was rejected by automation before a human saw it |
+| L-003 | `scripts/smoke-test.sh` — analytics assertion | **REJECTED** | First version asserted an exact resolution count against a link that earlier steps had already probed, including two `curl -I` HEAD requests. The number would have been wrong the moment the script ran. Replaced with a dedicated link resolved a known number of times. The failure mode this avoids is worse than a broken test: an exact assertion that fails for an uninteresting reason gets "fixed" by loosening it until it proves nothing |
+| L-004 | `docker-compose.yml` | **REJECTED** | Generated version set `SPRING_PROFILES_ACTIVE: docker`, referencing a profile that does not exist in the agreed structure. Spring would have silently ignored it, leaving a config file that appears to select a profile and does not. Removed; the default `application.yml` is already fully environment-driven |
+| L-005 | Spec v1 §6 — performance targets | **REJECTED** | Original draft claimed `p99 ≤ 50 ms at 500 rps`. Unverifiable on the target environment and precisely the unsupported scale claim the assessment warns against. Replaced with an SLI/SLO table separating production design targets from what a laptop demonstrates. Prompted the Constitution v1.1 amendment |
+| L-006 | Scenario split | **REJECTED** | Initial plan made analytics the brownfield change and expiry part of greenfield. Reversed: expiry is compact but genuinely cross-cutting — schema, API, redirect logic, compatibility, migration, docs, tests — which demonstrates codebase reasoning without creating a second product |
+| L-007 | NFR-5 — collision handling | **EDITED** | AI framed the requirement as a collision *probability* bound. Rephrased around *behaviour under a forced collision*: probability arguments fail silently, a test that forces the collision and asserts recovery does not |
+| L-008 | `application.yml` — Hikari timeouts | **GENERATED** | Connection timeout reduced from the 30 s default. Accepted: waiting 30 s to discover the database is gone converts one dependency outage into thread-pool exhaustion service-wide |
+
+Entries L-001 through L-008 cover the scaffold and specification phase. Implementation
+entries are added as tasks land, never reconstructed afterwards.
+
+## 4. Secure AI usage
+
+Article VII in practice:
+
+- **No secret ever entered a prompt.** `.env.example` contains placeholders only; every
+  credential in a committed file is a throwaway for a loopback-bound container.
+- **Every AI-proposed dependency was verified to exist** on Maven Central before adoption
+  (L-001), rather than trusted because it looked plausible.
+- **Security-relevant generated code is reviewed, not merely tested.** Destination
+  validation, API-key comparison and error rendering are reviewed against OWASP guidance,
+  because tests confirm the cases you imagined and review catches the ones you did not.
+- **Generated code is assumed to reflect common patterns in training data — which includes
+  common vulnerabilities.** Plausibility is not correctness.
