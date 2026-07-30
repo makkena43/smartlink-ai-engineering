@@ -1,0 +1,29 @@
+# Local development profile.
+#
+# Assumes the PostgreSQL container from docker-compose.yml is running:
+#   docker compose up -d postgres
+#
+# Credentials here are throwaway values for a container that is bound to localhost and
+# holds no real data. Nothing in this file is a secret, and nothing that is a secret
+# belongs in this file.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/smartlink
+    username: smartlink
+    password: smartlink
+
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+smartlink:
+  base-url: http://localhost:8080
+  # Seeded development keys. Production keys arrive via environment (see .env.example).
+  api-keys: local-dev-key-alpha,local-dev-key-beta
+
+logging:
+  level:
+    com.smartlink: DEBUG
+    org.flywaydb: INFO

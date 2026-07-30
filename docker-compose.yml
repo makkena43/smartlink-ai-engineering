@@ -1,0 +1,52 @@
+# SmartLink — reviewer-friendly local stack.
+#
+#   cp .env.example .env
+#   docker compose up --build
+#
+# The application waits for PostgreSQL to be genuinely ready, not merely started,
+# so a clean `up` on a cold machine does not race the database.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: smartlink-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-smartlink}
+      POSTGRES_USER: ${POSTGRES_USER:-smartlink}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smartlink}
+    ports:
+      # Bound to loopback only. A database reachable from the network is not a
+      # development convenience, it is an exposure.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-smartlink} -d ${POSTGRES_DB:-smartlink}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartlink-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # No profile is set on purpose: the default application.yml is already fully
+      # environment-driven, and `local` exists for running outside a container.
+      SMARTLINK_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-smartlink}
+      SMARTLINK_DB_USER: ${POSTGRES_USER:-smartlink}
+      SMARTLINK_DB_PASSWORD: ${POSTGRES_PASSWORD:-smartlink}
+      SMARTLINK_BASE_URL: ${SMARTLINK_BASE_URL:-http://localhost:8080}
+      SMARTLINK_API_KEYS: ${SMARTLINK_API_KEYS:-local-dev-key-alpha}
+    ports:
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
