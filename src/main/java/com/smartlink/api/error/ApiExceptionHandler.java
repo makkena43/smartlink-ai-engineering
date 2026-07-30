@@ -8,6 +8,7 @@ import com.smartlink.application.exception.SmartLinkException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
@@ -100,6 +101,30 @@ public class ApiExceptionHandler {
   @ExceptionHandler({NoResourceFoundException.class, NoHandlerFoundException.class})
   public ResponseEntity<ProblemDetail> onNoHandler(Exception ex, HttpServletRequest request) {
     return problem(ErrorCode.LINK_NOT_FOUND, ErrorCode.LINK_NOT_FOUND.safeMessage(), null, request);
+  }
+
+  /**
+   * The datastore could not be reached or could not answer.
+   *
+   * <p>Mapped to 503 rather than falling through to 500, and that distinction is NFR-02 made real:
+   * when the mapping cannot be verified the service must fail in a way that says <em>come
+   * back</em>, not one that says <em>something is broken</em>. The alternative — a redirect served
+   * from a guess or a stale value — would break the product's only real promise, that a short link
+   * goes where its owner said it goes.
+   *
+   * <p>Caught here rather than translated in the persistence adapter, because the adapter lives in
+   * {@code infrastructure} and the exception vocabulary lives in {@code application}: translating
+   * there would mean infrastructure depending on application, which the layering rule forbids.
+   * Transport is the right place to decide what a failure looks like on the wire anyway.
+   */
+  @ExceptionHandler(DataAccessException.class)
+  public ResponseEntity<ProblemDetail> onDataAccessFailure(
+      DataAccessException ex, HttpServletRequest request) {
+    // The message may name the database, the host, or the SQL. It goes to the log and never
+    // to the caller.
+    log.warn("Datastore unavailable: {}", ex.getMessage());
+    return problem(
+        ErrorCode.SERVICE_UNAVAILABLE, ErrorCode.SERVICE_UNAVAILABLE.safeMessage(), null, request);
   }
 
   @ExceptionHandler(Exception.class)
