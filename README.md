@@ -31,30 +31,41 @@ writing, before writing code, and keeps a record of who decided what.
 
 ## Quick start
 
-**Prerequisites:** Java 21, Docker (or Colima), Maven 3.9+.
+### Fastest — no Docker, no database, no Maven
+
+**Only prerequisite: a Java 21 JDK.** The Maven wrapper fetches Maven itself.
 
 ```bash
 git clone <repo> && cd smartlink-ai-engineering
+./mvnw spring-boot:run -Dspring-boot.run.profiles=h2
+```
+
+Ready in about 15 seconds on `http://localhost:8080`. Runs against an in-memory H2 database,
+so nothing is installed and nothing survives a restart.
+
+> **What the `h2` profile does not prove.** The integration suite runs against a real
+> PostgreSQL deliberately, because most of what it asserts is *database* behaviour — a unique
+> index arbitrating a concurrent insert, `UPDATE … SET x = x + 1` serialising at row level,
+> Flyway and Hibernate agreeing about a schema. H2 is close enough to demonstrate the API and
+> nowhere near close enough to validate those. Use Docker Compose for anything you intend to
+> trust.
+
+### Production-shaped — Docker Compose with PostgreSQL
+
+```bash
 cp .env.example .env
 docker compose up --build
+./scripts/smoke-test.sh          # 25 checks
 ```
 
-Then:
+### Full test suite
 
 ```bash
-./scripts/smoke-test.sh
+./mvnw verify                    # 232 tests; needs a Docker daemon for Testcontainers
 ```
 
-Build and test without Docker Compose:
-
-```bash
-mvn verify
-```
-
-Integration tests need a running Docker daemon. Two environment quirks — docker-java's
-default API version being rejected by Docker Engine 29, and Ryuk's socket path on Colima —
-are fixed in `pom.xml` rather than left to your shell. One thing is machine-specific and
-still yours, and only if you run **Colima** rather than Docker Desktop:
+On macOS with **Colima** rather than Docker Desktop, one machine-specific export is still
+yours (everything else is fixed in `pom.xml`):
 
 ```bash
 export DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock"
@@ -67,6 +78,7 @@ Detail: [`docs/testing-strategy.md`](docs/testing-strategy.md) §6.
 | API docs (generated) | `http://localhost:8080/swagger-ui.html` |
 | OpenAPI document | `http://localhost:8080/v3/api-docs` |
 | Readiness | `http://localhost:8080/actuator/health/readiness` |
+| H2 console (`h2` profile only) | `http://localhost:8080/h2-console` — JDBC `jdbc:h2:mem:smartlink`, user `sa`, no password |
 
 ---
 

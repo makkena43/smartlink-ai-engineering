@@ -2,6 +2,11 @@
 --
 -- Forward-only and additive-first. Scenario 02 adds expiration as a nullable column, so
 -- nothing here declares NOT NULL in a way that presumes expiry's absence.
+--
+-- Written in standard SQL where PostgreSQL offers a shorthand. `timestamp with time zone`
+-- rather than `timestamptz` is the same type to PostgreSQL and the only spelling H2 accepts,
+-- which is what lets the `h2` demo profile run this exact migration instead of a parallel
+-- copy that could drift from it.
 
 CREATE TABLE short_link (
     id              bigserial     PRIMARY KEY,
@@ -18,7 +23,7 @@ CREATE TABLE short_link (
     -- Database clock, not application clock. With multiple stateless instances the app-side
     -- alternative is a set of clocks that disagree, and disagreeing timestamps are the kind
     -- of bug that is only ever noticed long after the data is already wrong.
-    created_at      timestamptz   NOT NULL DEFAULT now(),
+    created_at      timestamp with time zone NOT NULL DEFAULT now(),
 
     -- Updated by a single atomic statement on the redirect path, never read-modify-write.
     total_redirects bigint        NOT NULL DEFAULT 0,

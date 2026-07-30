@@ -67,6 +67,26 @@
       <scope>runtime</scope>
     </dependency>
 
+    <!--
+      In-memory database for the `h2` profile only - a demo convenience so the service can be
+      run and clicked through without Docker.
+
+      It is NOT what ships and NOT what the tests run against. Every integration test uses a
+      real PostgreSQL via Testcontainers, deliberately: the things those tests assert are
+      database behaviours (a unique constraint arbitrating a race, an atomic UPDATE
+      serialising at row level, Flyway and Hibernate agreeing on a schema), and every one of
+      them would be asserted against a fiction under H2.
+
+      The cost of having it here at all is that it is present in the production jar. Accepted
+      for a prototype whose primary audience needs to run it in five minutes; in a real
+      deployment this belongs behind a Maven profile so it cannot ship.
+    -->
+    <dependency>
+      <groupId>com.h2database</groupId>
+      <artifactId>h2</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+
     <!-- AC-6.6: API documentation is generated from the implementation, never hand-maintained. -->
     <dependency>
       <groupId>org.springdoc</groupId>

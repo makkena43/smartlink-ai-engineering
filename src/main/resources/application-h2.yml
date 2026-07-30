@@ -1,0 +1,47 @@
+# In-memory profile - demo and manual exploration only.
+#
+#   mvn spring-boot:run -Dspring-boot.run.profiles=h2
+#
+# No Docker, no database to install, no state that survives a restart. Everything the service
+# does is exercised, but against H2 rather than PostgreSQL.
+#
+# WHAT THIS PROFILE DOES NOT PROVE. The integration suite runs against a real PostgreSQL on
+# purpose, because most of what it asserts is database behaviour rather than application
+# behaviour - a unique index arbitrating a concurrent insert, `UPDATE ... SET x = x + 1`
+# serialising at row level, Flyway and Hibernate agreeing about a schema. H2 in PostgreSQL
+# compatibility mode is close enough to demonstrate the API and nowhere near close enough to
+# validate those. Use `docker compose up` for anything you intend to trust.
+spring:
+  datasource:
+    # MODE=PostgreSQL so the Flyway migration written for PostgreSQL applies unchanged.
+    # DB_CLOSE_DELAY=-1 keeps the in-memory database alive for the JVM's lifetime rather than
+    # vanishing when the first connection closes.
+    url: jdbc:h2:mem:smartlink;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  # Browsable database console at http://localhost:8080/h2-console
+  # (JDBC URL: jdbc:h2:mem:smartlink, user: sa, no password)
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+smartlink:
+  base-url: http://localhost:8080
+
+logging:
+  level:
+    com.smartlink: INFO
