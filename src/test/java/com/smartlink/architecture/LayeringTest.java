@@ -1,6 +1,7 @@
 package com.smartlink.architecture;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
 import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
@@ -111,14 +112,20 @@ class LayeringTest {
   @Test
   @DisplayName("no node-local mutable state on the request path (NFR-06)")
   void noStaticMutableState() {
+    // Written first against CLASS modifiers, which was simply wrong - it read as "no static
+    // non-final classes" and duly flagged a nested sealed interface, since interfaces are
+    // never final. The mistake was invisible while the domain package was empty and the rule
+    // matched nothing, which is exactly the hazard recorded in the class Javadoc above: a
+    // rule that checks nothing cannot be observed to be checking the wrong thing.
     ArchRule rule =
-        noClasses()
+        noFields()
             .that()
-            .resideInAPackage(BASE + "..")
+            .areStatic()
+            .and()
+            .areNotFinal()
             .should()
-            .haveModifier(com.tngtech.archunit.core.domain.JavaModifier.STATIC)
-            .andShould()
-            .notHaveModifier(com.tngtech.archunit.core.domain.JavaModifier.FINAL)
+            .beDeclaredInClassesThat()
+            .resideInAPackage(BASE + "..")
             .because(
                 "horizontal scaling under NFR-06 is only free while any instance can serve "
                     + "any request; node-local mutable state is what quietly removes that");
