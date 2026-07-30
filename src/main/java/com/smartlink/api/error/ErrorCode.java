@@ -33,6 +33,26 @@ public enum ErrorCode {
   LINK_NOT_FOUND(HttpStatus.NOT_FOUND, "This short link does not exist."),
 
   /**
+   * The link existed and has passed its expiry (scenario 02).
+   *
+   * <p>Kept distinct from {@link #LINK_NOT_FOUND} because 404 and 410 answer different questions:
+   * "never existed" versus "existed, deliberately ended". An operator uses that difference to tell
+   * a typo from a finished campaign without touching the database.
+   *
+   * <p>Additive: no state that previously returned 404 or 302 returns this instead. A link only
+   * reaches it if someone gave it an expiry.
+   */
+  LINK_EXPIRED(HttpStatus.GONE, "This short link is no longer active."),
+
+  /**
+   * A supplied expiration timestamp was malformed, zone-ambiguous, or not in the future.
+   *
+   * <p>400 rather than the 422 used for a rejected destination: this is a request the caller got
+   * wrong and can fix, not a well-formed one the server declined on policy grounds.
+   */
+  INVALID_EXPIRY(HttpStatus.BAD_REQUEST, "The expiration time is invalid."),
+
+  /**
    * Reserved for the production rate limiter. Present in the vocabulary so the contract is stable
    * when it arrives, and <strong>not implemented in the prototype</strong> — requirements §6 puts
    * distributed rate limiting out of scope, and NFR-09 asks only that the design define it.

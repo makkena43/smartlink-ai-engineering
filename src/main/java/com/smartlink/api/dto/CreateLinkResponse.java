@@ -23,4 +23,9 @@ public record CreateLinkResponse(
     @Schema(description = "Destination, stored byte-identical to what was submitted")
         String destinationUrl,
     @Schema(description = "Creation instant, UTC", example = "2026-07-30T10:15:30Z")
-        Instant createdAt) {}
+        Instant createdAt,
+    @Schema(
+            description = "Expiry instant, UTC. Null when the link never expires.",
+            example = "2026-08-01T00:00:00Z",
+            nullable = true)
+        Instant expiresAt) {}

@@ -3,6 +3,7 @@ package com.smartlink.api.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.time.Instant;
 
 /**
  * Request to shorten a destination URL.
@@ -18,6 +19,11 @@ import jakarta.validation.constraints.Size;
  * check the same bound again.
  *
  * @param destinationUrl the URL a visitor should be sent to
+ * @param expiresAt optional UTC instant after which the link stops resolving. Omit it for a link
+ *     that never expires — which is exactly the Greenfield behaviour, so existing callers are
+ *     unaffected (BC-2). Must be ISO-8601 with an offset, e.g. {@code 2026-08-01T00:00:00Z}; a
+ *     local date-time is rejected rather than guessed at, because guessing a timezone is how a
+ *     campaign silently expires five and a half hours early.
  */
 @Schema(name = "CreateLinkRequest", description = "Request to create a short link")
 public record CreateLinkRequest(
@@ -27,4 +33,11 @@ public record CreateLinkRequest(
             requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank
         @Size(max = 2048)
-        String destinationUrl) {}
+        String destinationUrl,
+    @Schema(
+            description =
+                "Optional UTC instant after which the link stops resolving. Omit for a link that "
+                    + "never expires. Must carry an offset.",
+            example = "2026-08-01T00:00:00Z",
+            requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        Instant expiresAt) {}

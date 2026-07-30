@@ -10,9 +10,11 @@ import com.smartlink.domain.Link;
 import com.smartlink.domain.ShortCode;
 import com.smartlink.domain.port.HostResolver;
 import com.smartlink.domain.port.LinkRepository;
+import com.smartlink.domain.port.TimeSource;
 import com.smartlink.support.AbstractPostgresIT;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -46,10 +48,18 @@ class CreateLinkIT extends AbstractPostgresIT {
 
   private static final String VALID_URL = "https://example.com/campaign";
 
+  /**
+   * Fixed clock. Brownfield (scenario 02) added a {@link TimeSource} dependency; these Greenfield
+   * tests are unaffected by expiry, so a constant instant keeps them deterministic and keeps every
+   * assertion below exactly as it was.
+   */
+  private static final TimeSource FIXED_CLOCK = () -> Instant.parse("2026-01-01T00:00:00Z");
+
   @Autowired private LinkRepository repository;
 
   private CreateLinkUseCase useCaseWith(CodeGenerator generator) {
-    return new CreateLinkUseCase(new DestinationPolicy(stubResolver()), generator, repository);
+    return new CreateLinkUseCase(
+        new DestinationPolicy(stubResolver()), generator, repository, FIXED_CLOCK);
   }
 
   @Test

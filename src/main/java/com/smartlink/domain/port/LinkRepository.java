@@ -3,6 +3,7 @@ package com.smartlink.domain.port;
 import com.smartlink.domain.Destination;
 import com.smartlink.domain.Link;
 import com.smartlink.domain.ShortCode;
+import java.time.Instant;
 import java.util.Optional;
 
 /** Storage for short links. Implemented in {@code infrastructure}; consumed by use cases. */
@@ -23,7 +24,11 @@ public interface LinkRepository {
    * @return the stored link, or <strong>empty when the code was already taken</strong> — which is a
    *     normal, expected outcome and not a failure
    */
-  Optional<Link> insert(ShortCode code, Destination destination);
+  /**
+   * @param expiresAt UTC instant after which the link stops resolving, or {@code null} for a link
+   *     that never expires. Set once, at creation; never mutated (A-13).
+   */
+  Optional<Link> insert(ShortCode code, Destination destination, Instant expiresAt);
 
   Optional<Link> findByCode(ShortCode code);
 

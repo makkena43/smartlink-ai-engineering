@@ -23,4 +23,15 @@ public record AnalyticsResponse(
     @Schema(description = "Creation instant, UTC", example = "2026-07-30T10:15:30Z")
         Instant createdAt,
     @Schema(description = "Total successful redirects served", example = "1432")
-        long totalRedirects) {}
+        long totalRedirects,
+    @Schema(
+            description = "Expiry instant, UTC. Null when the link never expires.",
+            example = "2026-08-01T00:00:00Z",
+            nullable = true)
+        Instant expiresAt,
+    @Schema(
+            description =
+                "ACTIVE while the link still resolves; EXPIRED once it has passed its expiry. "
+                    + "A link with no expiry is always ACTIVE.",
+            example = "ACTIVE")
+        String status) {}

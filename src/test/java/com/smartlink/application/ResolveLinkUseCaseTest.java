@@ -8,6 +8,7 @@ import com.smartlink.domain.Destination;
 import com.smartlink.domain.Link;
 import com.smartlink.domain.ShortCode;
 import com.smartlink.domain.port.LinkRepository;
+import com.smartlink.domain.port.TimeSource;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -26,8 +27,15 @@ class ResolveLinkUseCaseTest {
 
   private static final String DESTINATION = "https://example.com/campaign?utm=1#frag";
 
+  /**
+   * Fixed clock. Brownfield (scenario 02) added a {@link TimeSource} dependency; these Greenfield
+   * tests are unaffected by expiry, so a constant instant keeps them deterministic and keeps every
+   * assertion below exactly as it was.
+   */
+  private static final TimeSource FIXED_CLOCK = () -> Instant.parse("2026-01-01T00:00:00Z");
+
   private final FakeRepository repository = new FakeRepository();
-  private final ResolveLinkUseCase useCase = new ResolveLinkUseCase(repository);
+  private final ResolveLinkUseCase useCase = new ResolveLinkUseCase(repository, FIXED_CLOCK);
 
   @Test
   @DisplayName("a known code resolves to its exact destination (GF-07)")
@@ -146,7 +154,7 @@ class ResolveLinkUseCaseTest {
     }
 
     @Override
-    public Optional<Link> insert(ShortCode code, Destination destination) {
+    public Optional<Link> insert(ShortCode code, Destination destination, Instant expiresAt) {
       throw new UnsupportedOperationException("not part of the resolve path");
     }
 

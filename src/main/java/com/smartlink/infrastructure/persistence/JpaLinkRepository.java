@@ -5,6 +5,7 @@ import com.smartlink.domain.Link;
 import com.smartlink.domain.ShortCode;
 import com.smartlink.domain.port.LinkRepository;
 import com.smartlink.infrastructure.resilience.BoundedRetry;
+import java.time.Instant;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,7 +56,7 @@ public class JpaLinkRepository implements LinkRepository {
    * the violation would surface at commit — past the catch, as an unhandled failure.
    */
   @Override
-  public Optional<Link> insert(ShortCode code, Destination destination) {
+  public Optional<Link> insert(ShortCode code, Destination destination, Instant expiresAt) {
     try {
       // The retry sees a constraint violation as non-transient and rethrows it immediately,
       // so the collision reaches the catch below on the first attempt. That separation is
@@ -67,7 +68,7 @@ public class JpaLinkRepository implements LinkRepository {
                   isolatedAttempt.execute(
                       status ->
                           jpa.saveAndFlush(
-                              new ShortLinkEntity(code.value(), destination.value()))));
+                              new ShortLinkEntity(code.value(), destination.value(), expiresAt))));
       return Optional.of(toDomain(saved));
     } catch (DataIntegrityViolationException e) {
       // short_code carries the only unique constraint on this table, and destination_url has
@@ -126,6 +127,7 @@ public class JpaLinkRepository implements LinkRepository {
         code,
         Destination.ofStoredValue(entity.getDestinationUrl()),
         entity.getCreatedAt(),
-        entity.getTotalRedirects());
+        entity.getTotalRedirects(),
+        entity.getExpiresAt());
   }
 }

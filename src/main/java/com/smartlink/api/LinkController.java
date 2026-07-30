@@ -6,6 +6,7 @@ import com.smartlink.api.dto.CreateLinkResponse;
 import com.smartlink.application.CreateLinkUseCase;
 import com.smartlink.application.ReadAnalyticsUseCase;
 import com.smartlink.domain.Link;
+import com.smartlink.domain.port.TimeSource;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -39,14 +40,17 @@ public class LinkController {
 
   private final CreateLinkUseCase createLink;
   private final ReadAnalyticsUseCase readAnalytics;
+  private final TimeSource timeSource;
   private final String baseUrl;
 
   public LinkController(
       CreateLinkUseCase createLink,
       ReadAnalyticsUseCase readAnalytics,
+      TimeSource timeSource,
       @Value("${smartlink.base-url}") String baseUrl) {
     this.createLink = createLink;
     this.readAnalytics = readAnalytics;
+    this.timeSource = timeSource;
     // Trailing slash normalised once, here. Getting this wrong produces short URLs with a
     // double slash - which mostly work, so it would ship, and every link issued in the
     // meantime would carry it.
@@ -67,7 +71,7 @@ public class LinkController {
     @ApiResponse(responseCode = "503", description = "Dependency unavailable")
   })
   public ResponseEntity<CreateLinkResponse> create(@Valid @RequestBody CreateLinkRequest request) {
-    Link link = createLink.create(request.destinationUrl());
+    Link link = createLink.create(request.destinationUrl(), request.expiresAt());
 
     return ResponseEntity.created(URI.create("/api/v1/links/" + link.code().value()))
         .body(
@@ -75,7 +79,8 @@ public class LinkController {
                 link.code().value(),
                 baseUrl + "/" + link.code().value(),
                 link.destination().value(),
-                link.createdAt()));
+                link.createdAt(),
+                link.expiresAt()));
   }
 
   @GetMapping("/{code}/analytics")
@@ -90,6 +95,13 @@ public class LinkController {
     Link link = readAnalytics.read(code);
 
     return new AnalyticsResponse(
-        link.code().value(), link.destination().value(), link.createdAt(), link.totalRedirects());
+        link.code().value(),
+        link.destination().value(),
+        link.createdAt(),
+        link.totalRedirects(),
+        link.expiresAt(),
+        // Computed at read time rather than stored: a stored status would be wrong from the
+        // instant it was written and would need a job to keep it true.
+        link.lifecycleAt(timeSource.now()).name());
   }
 }

@@ -12,6 +12,7 @@ import com.smartlink.domain.Link;
 import com.smartlink.domain.ShortCode;
 import com.smartlink.domain.port.HostResolver;
 import com.smartlink.domain.port.LinkRepository;
+import com.smartlink.domain.port.TimeSource;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Instant;
@@ -37,12 +38,19 @@ class CreateLinkUseCaseTest {
 
   private static final String VALID_URL = "https://example.com/campaign";
 
+  /**
+   * Fixed clock. Brownfield (scenario 02) added a {@link TimeSource} dependency; these Greenfield
+   * tests are unaffected by expiry, so a constant instant keeps them deterministic and keeps every
+   * assertion below exactly as it was.
+   */
+  private static final TimeSource FIXED_CLOCK = () -> Instant.parse("2026-01-01T00:00:00Z");
+
   private final FakeRepository repository = new FakeRepository();
   private final QueuedCodeGenerator generator = new QueuedCodeGenerator();
   private final DestinationPolicy policy = new DestinationPolicy(publicResolverFor("example.com"));
 
   private CreateLinkUseCase useCase() {
-    return new CreateLinkUseCase(policy, generator, repository);
+    return new CreateLinkUseCase(policy, generator, repository, FIXED_CLOCK);
   }
 
   // ---------------------------------------------------------------------------------------
@@ -217,7 +225,7 @@ class CreateLinkUseCaseTest {
     }
 
     @Override
-    public Optional<Link> insert(ShortCode code, Destination destination) {
+    public Optional<Link> insert(ShortCode code, Destination destination, Instant expiresAt) {
       if (failure != null) {
         throw failure;
       }

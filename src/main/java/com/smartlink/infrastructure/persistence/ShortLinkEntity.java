@@ -71,13 +71,28 @@ public class ShortLinkEntity {
   @Column(name = "total_redirects", nullable = false, insertable = false, updatable = false)
   private long totalRedirects;
 
+  /**
+   * UTC instant after which the link stops resolving; {@code null} means it never does.
+   *
+   * <p>{@code updatable = false} for the same reason the destination is: a short link is a stable
+   * public handle, and silently changing when it stops working is a smaller version of silently
+   * changing where it points. Expiry is set at creation and never mutated (A-13).
+   */
+  @Column(name = "expires_at", updatable = false)
+  private Instant expiresAt;
+
   protected ShortLinkEntity() {
     // Required by JPA.
   }
 
   public ShortLinkEntity(String shortCode, String destinationUrl) {
+    this(shortCode, destinationUrl, null);
+  }
+
+  public ShortLinkEntity(String shortCode, String destinationUrl, Instant expiresAt) {
     this.shortCode = Objects.requireNonNull(shortCode, "shortCode");
     this.destinationUrl = Objects.requireNonNull(destinationUrl, "destinationUrl");
+    this.expiresAt = expiresAt; // nullable by design: null means non-expiring
   }
 
   public Long getId() {
@@ -98,6 +113,10 @@ public class ShortLinkEntity {
 
   public long getTotalRedirects() {
     return totalRedirects;
+  }
+
+  public Instant getExpiresAt() {
+    return expiresAt;
   }
 
   /**

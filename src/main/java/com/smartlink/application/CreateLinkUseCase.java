@@ -2,12 +2,15 @@ package com.smartlink.application;
 
 import com.smartlink.application.exception.DependencyUnavailableException;
 import com.smartlink.application.exception.InvalidDestinationException;
+import com.smartlink.application.exception.InvalidExpiryException;
 import com.smartlink.domain.CodeGenerator;
 import com.smartlink.domain.Destination;
 import com.smartlink.domain.DestinationPolicy;
 import com.smartlink.domain.Link;
 import com.smartlink.domain.ShortCode;
 import com.smartlink.domain.port.LinkRepository;
+import com.smartlink.domain.port.TimeSource;
+import java.time.Instant;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,12 +51,17 @@ public class CreateLinkUseCase {
   private final DestinationPolicy policy;
   private final CodeGenerator generator;
   private final LinkRepository repository;
+  private final TimeSource timeSource;
 
   public CreateLinkUseCase(
-      DestinationPolicy policy, CodeGenerator generator, LinkRepository repository) {
+      DestinationPolicy policy,
+      CodeGenerator generator,
+      LinkRepository repository,
+      TimeSource timeSource) {
     this.policy = policy;
     this.generator = generator;
     this.repository = repository;
+    this.timeSource = timeSource;
   }
 
   /**
@@ -61,12 +69,28 @@ public class CreateLinkUseCase {
    * @throws InvalidDestinationException the destination is refused by policy (422)
    * @throws DependencyUnavailableException no code could be allocated (503)
    */
+  /**
+   * Creates a link that never expires.
+   *
+   * <p>Kept as an overload so every Greenfield call site — production and test — compiles
+   * unchanged. Omitting an expiry <em>is</em> a non-expiring link, so this reads as a meaningful
+   * default rather than a compatibility shim.
+   */
   public Link create(String rawDestinationUrl) {
+    return create(rawDestinationUrl, null);
+  }
+
+  /**
+   * @param expiresAt UTC instant after which the link stops resolving, or {@code null} for never
+   * @throws InvalidExpiryException the expiry is not strictly in the future (400)
+   */
+  public Link create(String rawDestinationUrl, Instant expiresAt) {
     Destination destination = validate(rawDestinationUrl);
+    validateExpiry(expiresAt);
 
     for (int attempt = 1; attempt <= MAX_CODE_ATTEMPTS; attempt++) {
       ShortCode candidate = generator.next();
-      Optional<Link> stored = repository.insert(candidate, destination);
+      Optional<Link> stored = repository.insert(candidate, destination, expiresAt);
       if (stored.isPresent()) {
         return stored.get();
       }
@@ -82,6 +106,29 @@ public class CreateLinkUseCase {
     // outcome into the channel reserved for "someone needs to look at this".
     throw new DependencyUnavailableException(
         "exhausted " + MAX_CODE_ATTEMPTS + " short-code candidates without finding a free one");
+  }
+
+  /**
+   * Rejects an expiry that is already past.
+   *
+   * <p>Checked against the authoritative {@link TimeSource}, not {@code Instant.now()}: with
+   * several instances the latter means several clocks, and a link created near its own expiry would
+   * then be accepted by one instance and refused by another.
+   *
+   * <p>An expiry exactly equal to "now" is refused, because {@link
+   * com.smartlink.domain.LinkLifecycle} treats that same instant as already expired — accepting it
+   * would create a link that is dead the moment it exists, which is never what the caller meant.
+   */
+  private void validateExpiry(Instant expiresAt) {
+    if (expiresAt == null) {
+      return; // absent means non-expiring, which is always valid
+    }
+    if (!expiresAt.isAfter(timeSource.now())) {
+      // The submitted timestamp is deliberately absent from the message: it reaches the logs,
+      // and the rule that input is never reflected is only worth anything if it holds
+      // everywhere, not just where reflection is obviously dangerous.
+      throw new InvalidExpiryException("expiry.not-in-future", "expiry is not in the future");
+    }
   }
 
   private Destination validate(String rawDestinationUrl) {

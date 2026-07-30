@@ -34,9 +34,17 @@ class SchemaConstraintsIT extends AbstractPostgresIT {
   @Test
   @DisplayName("migration produces exactly the expected columns, and no others")
   void schemaHasExactlyTheExpectedColumns() {
+    // `expires_at` added by scenario 02 (V2). This assertion failing on that migration is the
+    // test working, not the test being wrong: it exists so a column cannot appear without
+    // someone deciding it should. The addition is recorded as an approved schema change in
+    // 02-brownfield/impact-analysis.md §5, which is the difference between updating an
+    // expectation and quietly bending a test to fit.
+    //
+    // The two sibling assertions below - no version column, no personal-data column - are
+    // untouched and still pass.
     assertThat(columnNames())
         .containsExactlyInAnyOrder(
-            "id", "short_code", "destination_url", "created_at", "total_redirects");
+            "id", "short_code", "destination_url", "created_at", "total_redirects", "expires_at");
   }
 
   @Test

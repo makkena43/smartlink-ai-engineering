@@ -3,6 +3,8 @@ package com.smartlink.api.error;
 import com.smartlink.api.CorrelationIdFilter;
 import com.smartlink.application.exception.DependencyUnavailableException;
 import com.smartlink.application.exception.InvalidDestinationException;
+import com.smartlink.application.exception.InvalidExpiryException;
+import com.smartlink.application.exception.LinkExpiredException;
 import com.smartlink.application.exception.LinkNotFoundException;
 import com.smartlink.application.exception.SmartLinkException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -59,6 +61,29 @@ public class ApiExceptionHandler {
   public ResponseEntity<ProblemDetail> onNotFound(
       LinkNotFoundException ex, HttpServletRequest request) {
     return problem(ErrorCode.LINK_NOT_FOUND, ex.safeDetail(), null, request);
+  }
+
+  /**
+   * An expired link (scenario 02).
+   *
+   * <p>Returns 410 with no {@code Location} header — the handler cannot emit one, which is the
+   * structural reason an expired link can never redirect. Logged at DEBUG: an expired link being
+   * hit is entirely normal traffic for a finished campaign, and logging it louder would train
+   * operators to ignore the level it was logged at.
+   */
+  @ExceptionHandler(LinkExpiredException.class)
+  public ResponseEntity<ProblemDetail> onLinkExpired(
+      LinkExpiredException ex, HttpServletRequest request) {
+    log.debug("Resolve refused: link expired");
+    return problem(ErrorCode.LINK_EXPIRED, ex.safeDetail(), null, request);
+  }
+
+  @ExceptionHandler(InvalidExpiryException.class)
+  public ResponseEntity<ProblemDetail> onInvalidExpiry(
+      InvalidExpiryException ex, HttpServletRequest request) {
+    // The reason comes from a fixed vocabulary; the submitted timestamp never does.
+    log.info("Expiry rejected: reason={}", ex.reason());
+    return problem(ErrorCode.INVALID_EXPIRY, ex.safeDetail(), ex.reason(), request);
   }
 
   @ExceptionHandler(DependencyUnavailableException.class)
