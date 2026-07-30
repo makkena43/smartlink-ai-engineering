@@ -210,7 +210,7 @@ listed explicitly because each guards a decision that is invisible in the code i
 | Requirements | NFR-12 and all acceptance criteria |
 | Technical context | Docker Compose app + PostgreSQL; README; final architecture overview; AI traceability; scenario evidence. |
 | Tasks | Add Dockerfile and Compose file; write setup/run/test/API examples; complete architecture overview; record AI assistance; execute fresh-start smoke test; final engineer review. |
-| Acceptance criteria | A reviewer can start the service, create a link, follow a redirect, view analytics, run tests, and understand assumptions/trade-offs from the repository. `validation.md` traceability matrix is populated from **real results**, and `architecture-overview.md` is promoted from placeholder to final artifact, written from the system that actually got built. |
+| Acceptance criteria | A reviewer can start the service, create a link, follow a redirect, view analytics, run tests, and understand assumptions/trade-offs from the repository. `validation.md` traceability matrix is populated from **real results**, and `architecture-overview.md` is the final artifact, written from the system that was actually built. |
 | AI assistance allowed | Documentation clarity review; engineer verifies every command, link and technical claim by running it. |
 | Engineer approval | Final sign-off confirms runnable result, quality-gate evidence, accurate limitations, and no unreviewed AI output. |
 | Validation evidence | Fresh-checkout / fresh-start runbook result, README review, final summary. |

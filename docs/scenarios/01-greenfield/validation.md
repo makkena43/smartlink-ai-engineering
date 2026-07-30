@@ -2,12 +2,27 @@
 
 Evidence that v1 does what [`engineering-spec.md`](engineering-spec.md) says it does.
 
-**Status:** T1–T9 complete. T10 (packaging, architecture overview, final review) outstanding.
+**Status:** T1–T10 complete. Packaging, the final architecture overview, and final review
+evidence are complete. Gate D remains the engineer-of-record sign-off checkpoint.
 
 ```
 mvn verify        232 tests, 0 failures     line 91.8%   branch 77.7%
 smoke-test.sh      25 checks, 0 failures    against docker compose
 ```
+
+## Greenfield completion and Gate D sign-off
+
+| Checkpoint | Evidence | Status |
+|---|---|---|
+| Requirements, engineering spec, and tasks | `requirements.md`, `engineering-spec.md`, `task-decomposition.md` | Complete |
+| Runnable delivery | Docker Compose fresh-start smoke test: 25/25 checks | Complete |
+| Automated validation | `mvn verify`: 232 tests, 0 failures; quality gates in §4 | Complete |
+| Final architecture artifact | [`../../architecture-overview.md`](../../architecture-overview.md) reflects the built service | Complete |
+| AI traceability | [`../../ai-assisted-engineering.md`](../../ai-assisted-engineering.md) records accepted, edited, and rejected assistance | Complete |
+| Gate D - engineer sign-off | Engineer confirms evidence, limitations, and repository contents | Pending signature |
+
+**Engineer of record:** Srinivas Makkena  
+**Gate D approved:** ____________________  **Date:** __________
 
 ---
 

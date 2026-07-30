@@ -27,12 +27,15 @@ process that cannot be audited cannot be defended in review. So it is written do
 
 ## Article I — Specification precedes implementation
 
-**I.1** No production code is written before a `spec.md` for that scenario exists, is
-committed, and is approved at Gate A.
+**I.1** No production code is written before a requirements baseline and engineering
+specification for that scenario exist, are committed, and are approved at Gate A.
 
-**I.2** A spec states **what** and **why**. It must not contain class names, framework
-choices, table layouts, or library selections. Those belong in the plan. This separation
-is enforced at review: a spec that names a framework is defective and is sent back.
+**I.2** Requirements state **what** and **why**. The engineering specification translates
+approved requirements into a buildable design and may contain architecture, framework,
+schema, API, library, quality-gate, and validation decisions. A plan/task decomposition then
+states the ordered execution work. This separation is enforced at review: product requirements
+must not silently contain implementation choices, and engineering specifications must trace
+every material choice back to a requirement or recorded assumption.
 
 **I.3** Every spec carries testable acceptance criteria. "The service should be fast" is
 not an acceptance criterion. "p99 redirect latency ≤ 50 ms at 500 rps on the reference
@@ -116,8 +119,9 @@ test generation, documentation, and review preparation — but its role in each 
 
 ## Article V — Traceability
 
-**V.1** Every scenario maintains a traceability ledger at
-`docs/ai-engineering/ledger-<scenario>.md`, classifying each material AI contribution as:
+**V.1** The repository maintains its traceability ledger at
+`docs/ai-assisted-engineering.md`, with scenario/task references for each material AI
+contribution. The ledger classifies each contribution as:
 
 | Class | Meaning |
 |---|---|
