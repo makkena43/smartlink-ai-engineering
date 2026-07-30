@@ -31,6 +31,12 @@ The Greenfield prototype must be runnable end-to-end and demonstrate a productio
 | GF-11 | Analytics | The system shall expose basic analytics for a known short link, including its total successful redirect count. |
 | GF-12 | Analytics access policy | Basic analytics for a known short code shall be available without authentication in the prototype. |
 | GF-13 | Operational capability | The system shall expose operational health information suitable for local checks and future automated routing decisions. |
+| GF-14 | Input validation / scheme safety | The system shall accept only `http` and `https` destination URL schemes, and shall reject all other schemes, including but not limited to `javascript:`, `data:`, `file:`, `vbscript:`, and `blob:`. |
+| GF-15 | Input validation / server-side request forgery | The system shall reject destination URLs whose host resolves to a private, loopback, link-local, multicast, or cloud-metadata address range. |
+| GF-16 | Input validation / evasion resistance | The system shall reject a blocked destination address regardless of the notation used to express it, including decimal, octal, hexadecimal, IPv6-mapped, and credential-embedded forms. |
+| GF-17 | Input validation / bounds | The system shall reject destination URLs and short codes that exceed documented maximum lengths. |
+| GF-18 | Injection safety / response integrity | The system shall reject destination URLs containing control characters, and shall never emit unescaped user-supplied input into a response body or response header. |
+| GF-19 | Redirect target integrity | The system shall redirect only to a destination that passed validation at creation time and has been stored without modification. |
 
 ## 4. Quality and operational requirements
 
@@ -49,10 +55,16 @@ The Greenfield prototype must be runnable end-to-end and demonstrate a productio
 | NFR-11 | Quality / testability | The system shall provide automated coverage for critical successful and failure paths. |
 | NFR-12 | Operability | The repository shall provide repeatable setup, execution, and validation instructions. |
 | NFR-13 | Privacy | The prototype shall not collect IP address, geographic location, browser, device, referrer, or other personal data. |
+| NFR-14 | Security / injection resistance | The system shall not construct data-store queries, log statements, or response headers by string concatenation of unvalidated user input. |
+| NFR-15 | Security / validation placement | Destination validation shall be enforced within the application core, so that it cannot be bypassed by an alternative entry point or transport. |
+| NFR-16 | Security / fail-closed validation | Where a destination cannot be conclusively validated, the system shall reject it rather than accept it. |
 
 ## 5. Scope assumptions
 
 - Only HTTP and HTTPS destination URLs are supported.
+- A URL shortener is an open redirector by design; the validation requirements bound that behavior rather than remove it.
+- Destination address validation is evaluated against the resolved address, not the submitted hostname text.
+- Destination validation is applied at creation time; the prototype does not re-validate stored destinations at redirect time.
 - The prototype supports anonymous link creation.
 - The prototype does not maintain link-creator identity.
 - The prototype does not enforce per-creator quotas.
@@ -90,6 +102,11 @@ The Greenfield prototype must be runnable end-to-end and demonstrate a productio
 7. A dependency-resolution failure results in a safe temporary-failure response and never redirects to an unverified destination.
 8. The service can be started and validated end-to-end through documented repository instructions.
 9. Automated tests cover creation, redirect, validation, not-found behavior, analytics, concurrency correctness, and dependency-failure behavior.
+10. A destination using a non-HTTP/HTTPS scheme, including `javascript:` and `data:`, is rejected with a client error and is never stored.
+11. A destination resolving to a private, loopback, link-local, or cloud-metadata address is rejected with a client error.
+12. A blocked destination address expressed in decimal, octal, hexadecimal, IPv6-mapped, or credential-embedded notation is rejected with the same result as its plain form.
+13. A destination containing control characters, including carriage return or line feed, is rejected and cannot alter the headers of any response.
+14. Error responses arising from an invalid destination do not contain the raw submitted value in unescaped form.
 
 ## 8. Requirement decisions recorded by the engineer
 

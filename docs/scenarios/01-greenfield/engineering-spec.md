@@ -25,6 +25,12 @@ requirement ID it claims to satisfy.
 | GF-10 | §9.1 — destination validation policy |
 | GF-11, GF-12 | §6.3 — unauthenticated stats endpoint |
 | GF-13 | §9.3 — liveness and readiness probes |
+| GF-14 | §9.1.1 — scheme allowlist |
+| GF-15 | §9.1.2 — resolved-address range policy |
+| GF-16 | §9.1.3 — normalisation before evaluation |
+| GF-17 | §9.1.4 — length bounds |
+| GF-18 | §9.1.5 — control-character rejection · §9.2 — output encoding |
+| GF-19 | §9.1.6 — validate-once-at-creation, store verbatim |
 | NFR-01 | §7 — PostgreSQL as system of record; no in-memory mapping store |
 | NFR-02 | §8.2 — 503 on unresolvable mapping; never a guessed destination |
 | NFR-03 | §8.3 — bounded retry policy |
@@ -37,6 +43,9 @@ requirement ID it claims to satisfy.
 | NFR-11 | §11 — test strategy |
 | NFR-12 | §11.4 — documented run and validate path |
 | NFR-13 | §7.1 — schema stores no personal data |
+| NFR-14 | §7.2, §9.2 — parameterised queries, structured logging, no concatenated headers |
+| NFR-15 | §4, §9.1 — validation lives in `domain`, not in the controller |
+| NFR-16 | §9.1.6 — unresolvable or ambiguous destinations are rejected |
 
 ### 1.2 Decisions this spec makes that requirements deferred
 
@@ -54,7 +63,6 @@ requirement, not a new requirement:
 
 | Decision | Stated requirement it implements | Why it goes further |
 |---|---|---|
-| Reject private / loopback / link-local / metadata destination addresses (§9.1) | GF-10 (input validation) | `http://169.254.169.254/` is well-formed and uses a supported scheme, so a literal reading of GF-10 permits it. It is the cloud instance-metadata endpoint |
 | Analytics failure must not fail a redirect (§5.2) | NFR-02 + GF-11 | Neither says what happens when the *counter write* fails. The obvious implementation — one transaction over lookup and increment — would fail a redirect whose destination was perfectly available |
 | Destination URLs are not logged at INFO (§9.2) | NFR-04 | NFR-04 governs what errors expose to a client. Logs are a different and more persistent exposure; destination query strings routinely carry tokens |
 | Short codes are unguessable and never reassigned (§2, §7.2) | GF-05 + GF-12 | With anonymous creation and unauthenticated analytics, possession of the code is the only access control that exists |
@@ -489,29 +497,141 @@ obligation here rather than an implemented one.
 
 ## 9. Security and observability design
 
-### 9.1 Destination validation (GF-10)
+### 9.1 Destination validation (GF-10, GF-14…GF-19, NFR-14…NFR-16)
 
-| Rule | Reject |
+A URL shortener is an **open redirector by construction** — that is the product, not a
+defect. Validation therefore cannot aim to stop redirection; it aims to bound *what can be
+redirected to* and *what a submitted string can do to the service on its way through*.
+
+Validation lives in `com.smartlink.domain`, not in the controller (NFR-15). A rule enforced
+at the transport boundary is bypassed by the next entry point someone adds — a batch import,
+a message consumer, an admin path. A rule enforced in the domain type cannot be, because
+there is no way to construct a `Destination` that has not passed it.
+
+The pipeline runs in a fixed order, and the order is load-bearing: **normalise first, then
+decide.** A validator that decides before normalising is checking a string the rest of the
+system will never see.
+
+```
+  raw input
+    │
+    ├─▶ 9.1.4  length bound            ── reject oversized before any parsing work
+    ├─▶ 9.1.5  control-character scan  ── reject CR, LF, NUL, tab before parsing
+    ├─▶        RFC 3986 parse          ── reject unparseable
+    ├─▶ 9.1.1  scheme allowlist        ── http | https only
+    ├─▶ 9.1.3  host normalisation      ── IDN, percent, numeric forms → canonical
+    ├─▶ 9.1.2  resolve + address check ── every resolved address must be public
+    └─▶ 9.1.6  accept → store verbatim
+```
+
+#### 9.1.1 Scheme allowlist (GF-14)
+
+**Allow `http` and `https`. Reject everything else** — `javascript:`, `data:`, `file:`,
+`vbscript:`, `blob:`, and anything not on the list.
+
+An allowlist, never a denylist. A denylist is a bet that you enumerated every dangerous
+scheme, against an attacker who only needs one you missed.
+
+This is the stored-XSS control. `javascript:alert(document.cookie)` behind a short link the
+recipient was told to trust executes in *their* origin when followed from a page that renders
+it as an anchor. The shortener becomes the delivery mechanism, and the trust the short domain
+carries is precisely what makes it effective.
+
+#### 9.1.2 Address range policy (GF-15)
+
+Reject when **any** resolved address falls in:
+
+| Range | Example | Why |
+|---|---|---|
+| Loopback | `127.0.0.0/8`, `::1` | reaches the service's own host |
+| Private | `10/8`, `172.16/12`, `192.168/16`, `fc00::/7` | internal network |
+| Link-local | `169.254.0.0/16`, `fe80::/10` | includes cloud metadata |
+| **Cloud metadata** | `169.254.169.254`, `fd00:ec2::254` | credentials endpoint |
+| Multicast / reserved / unspecified | `224/4`, `0.0.0.0`, `::` | no legitimate destination |
+
+`http://169.254.169.254/` is well-formed and uses an allowed scheme, so GF-10 alone permits
+it. It is the cloud instance-metadata endpoint, and on an unhardened instance it serves role
+credentials.
+
+The exposure is latent today — nothing server-side currently fetches a destination — and
+becomes live the moment anything does: link preview, title enrichment, safety scanning,
+availability checking. All are natural next features. **Validating at creation costs almost
+nothing now and is expensive to retrofit later**, because by then the corpus already contains
+the bad rows.
+
+Evaluation is against **every** address the host resolves to, not the first. A hostname with
+one public and one private A record passes a first-address-only check.
+
+#### 9.1.3 Normalisation before evaluation (GF-16)
+
+The same address has many spellings. All of these are `169.254.169.254`:
+
+| Notation | Form |
 |---|---|
-| Scheme | anything other than `http` or `https` — notably `javascript:`, `data:`, `file:` |
-| Length | beyond a documented maximum (2 048 characters) |
-| Address range | hosts resolving to private, loopback, link-local or cloud-metadata ranges |
-| Encoded forms | decimal, octal and IPv6-mapped encodings of the above |
+| Decimal | `http://2852039166/` |
+| Octal | `http://0251.0376.0251.0376/` |
+| Hexadecimal | `http://0xA9FEA9FE/` |
+| Mixed | `http://0xA9FE.43518/` |
+| IPv6-mapped | `http://[::ffff:169.254.169.254]/` |
+| Credential-embedded | `http://expected.com@169.254.169.254/` |
 
-A shortener is an open redirector by construction — that is its function, not a defect. Two
-things follow that GF-10's literal text does not cover:
+The last one is the nastiest, because it reads as a legitimate host to a human reviewer and
+to any check that scans for a substring: everything before `@` is userinfo and is discarded
+by the parser. The **authority component after any `@`** is the host, and that is what must
+be evaluated.
 
-- Without scheme restriction it is a **stored-XSS delivery mechanism**: a `javascript:`
-  payload behind a link the recipient was told to trust.
-- Without address restriction it is an **SSRF pivot** the moment any server-side component
-  fetches a destination — which link-preview or metadata enrichment plausibly will.
-  `http://169.254.169.254/` is well-formed, uses a supported scheme, and is the cloud
-  instance-metadata endpoint.
+Percent-encoding and IDN/punycode are normalised before evaluation for the same reason.
+Confusable-character homograph handling is **not** attempted — that is a phishing control,
+not an SSRF control, and a half-implementation would give false assurance (§13.3).
 
-Encoded forms are named explicitly because `http://2852039166/` and `http://0xA9FEA9FE/`
-are the same address, and a validator that inspects only the hostname string rejects neither.
+#### 9.1.4 Length bounds (GF-17)
 
-Validation is performed against the **resolved address**, not the hostname string.
+| Input | Maximum |
+|---|---|
+| Destination URL | 2 048 characters |
+| Short code path segment | 16 characters |
+
+Checked **before parsing**, so a megabyte of input is rejected without work being done on it.
+Unbounded input that reaches storage is both a denial-of-service vector and a schema decision
+made by accident; a stated limit makes it a decision.
+
+#### 9.1.5 Control characters and response-header integrity (GF-18)
+
+Reject any destination containing CR, LF, NUL, or raw tab.
+
+This is the control specific to *being a redirect service*. The destination is written into a
+`Location` **response header**. A destination carrying `%0d%0a` that is decoded before being
+written can terminate that header and inject others — a response-splitting primitive that can
+forge a response body or poison an intermediary cache.
+
+Two independent defences, because either alone is a single point of failure:
+
+1. Reject control characters at creation, so such a value is never stored.
+2. Emit the header through the framework's header API, which encodes it — never by string
+   concatenation (NFR-14).
+
+The same rule covers response *bodies*: an invalid destination is echoed back only escaped,
+or not at all. Reflecting attacker-supplied input into an error page is how a validation
+endpoint becomes the XSS vector it was added to prevent (§9.2).
+
+#### 9.1.6 Validate once, store verbatim, fail closed (GF-19, NFR-16)
+
+- **Validated at creation.** The redirect path does not re-validate; it trusts the store,
+  which is the only thing that lets the read path stay fast. GF-19 is what makes that trust
+  sound — nothing reaches the store without passing.
+- **Stored byte-identical** to what was submitted and accepted. Normalisation happens for
+  *evaluation only*; the stored value is never rewritten, because normalising a stored
+  destination would silently break signed URLs and tracking parameters (GF-07).
+- **Fail closed** (NFR-16). If a host cannot be resolved, resolution times out, or the URL
+  cannot be parsed unambiguously, the destination is **rejected**. Accepting the unverifiable
+  would defeat the whole control by making DNS failure the bypass.
+
+**A known and accepted limitation: this is time-of-check-to-time-of-use.** DNS is validated
+at creation; a hostname can be re-pointed at a private address afterwards, and a destination
+valid on Monday can be hostile on Tuesday. There is no fix at creation time — only
+re-validation at fetch time, by whichever component eventually fetches. Since no such
+component exists yet, the mitigation is recorded as a **constraint on the first feature that
+introduces one** (R-1, §13.2) rather than claimed as solved.
 
 ### 9.2 Error handling and log hygiene (NFR-04)
 
@@ -609,6 +729,14 @@ from a claim into a number.
 | `RetryPolicyTest` | Non-transient failures are **not** retried; transient ones retry exactly once | The dangerous bug is over-retrying, and it is invisible until an outage |
 | `ConcurrentCreateIT` | N parallel creates → N distinct codes, zero conflicts | GF-06 |
 | `ForcedCollisionIT` | Generator stubbed to repeat → insert-and-retry recovers | GF-05, V-6 |
+| `DestinationPolicyTest` | Table-driven over every notation in §9.1.3 — decimal, octal, hex, mixed, IPv6-mapped, credential-embedded — each rejected identically to its plain form | GF-16. A validator is only as good as the encodings it was tested against, and this is the class of bug that ships silently |
+| `SchemeAllowlistTest` | `javascript:`, `data:`, `file:`, `vbscript:`, `blob:` rejected; `http`/`https` accepted | GF-14 |
+| `HeaderInjectionTest` | A destination containing `%0d%0a` is rejected at creation, **and** no crafted stored value can split the `Location` header | GF-18 — asserts both defences independently, since either alone is a single point of failure |
+| `ErrorReflectionTest` | Invalid-destination errors never contain the raw submitted value unescaped | GF-18, acceptance criterion 14 |
+
+`DestinationPolicyTest` is table-driven on purpose. Encoding-evasion bugs are found by
+enumerating notations, not by reasoning about them — the failure mode is always an encoding
+nobody thought of, and a table makes adding one a single line.
 
 ### 11.3 Quality gates
 
@@ -686,7 +814,9 @@ that most need one author.
 
 | # | Risk | Severity | Mitigation |
 |---|---|---|---|
-| R-1 | Destination validation bypassed via DNS rebinding or an encoding normalised differently than resolved | High — SSRF | Validate the resolved address; explicit encoded-form tests |
+| R-1 | Destination validation bypassed by an encoding not covered by §9.1.3 | High — SSRF | Normalise before evaluating; table-driven tests over every known notation |
+| R-1b | **Time-of-check-to-time-of-use**: a hostname validated at creation is later re-pointed at a private address | High — SSRF, and **not fixable at creation time** | Accepted and documented (§9.1.6). Binding constraint on the first feature that fetches a destination: it must re-validate at fetch time, against the address it actually connects to |
+| R-1c | Homograph / confusable-character destinations used for phishing | Medium | **Not addressed.** A phishing control, not an SSRF control; a partial implementation would give false assurance (§13.3) |
 | R-2 | Analytics coupling reintroduced by a later refactor | High — outage from a non-essential path | Fault-injection test in CI, not a review convention |
 | R-3 | Hot-row contention on a viral link | Medium | Measured by scenario B before it is a surprise |
 | R-4 | Over-retrying amplifies a database outage | High | One retry on resolve, jittered; asserted by test |
@@ -705,6 +835,9 @@ that most need one author.
 | Hot-key strategy | documented (§8.5) | cache replication, CDN / edge |
 | Analytics | basic count | async event pipeline, aggregates |
 | Rate limiting | documented (§8.6) | distributed limiter, quotas, WAF |
+| Destination reputation screening | **not attempted** | malware / phishing feed lookup at creation and periodic re-screening of the stored corpus |
+| Homograph & confusable-domain detection | **not attempted** | IDN confusable analysis, registrable-domain similarity scoring |
+| Fetch-time re-validation (TOCTOU, R-1b) | n/a — nothing fetches yet | mandatory for the first feature that fetches a destination |
 | Geography | one region | multi-AZ → global routing → multi-region per RTO/RPO |
 
 ---
