@@ -82,12 +82,12 @@ keeps it unit-testable with no container.
 
 ### A-13 — May an existing link's expiry be set, changed, or removed after creation?
 
-**Chosen: not in v2. Expiry is set at creation only.**
+**Chosen: not in this Brownfield scenario. Expiry is set at creation only.**
 
 **Rationale.** Scenario 01 deliberately excluded destination mutation on the grounds that a
 short link is a *stable public handle*. Expiry mutation is a smaller version of the same
 question and deserves the same deliberate answer rather than arriving as a side effect of
-adding a column. Deferring it costs nothing and keeps v2's blast radius honest.
+adding a column. Deferring it costs nothing and keeps this Brownfield change's blast radius honest.
 
 **Reversibility:** *Reversible* — adding mutation later is additive.
 
@@ -110,19 +110,55 @@ something the build can check.
 
 ---
 
-## 5. Out of scope
+## 5. Functional requirements
+
+| ID | Requirement type | Requirement |
+|---|---|---|
+| BF-01 | Link-creation enhancement | A link creator may provide an optional expiration timestamp when creating a short link. |
+| BF-02 | Input validation | An expiration timestamp, when supplied, shall be a valid UTC instant later than the creation time. |
+| BF-03 | Backward compatibility | A caller that omits the expiration timestamp shall receive the same creation behaviour as in Scenario 01. |
+| BF-04 | Link lifecycle | A link with no expiration timestamp shall remain active. |
+| BF-05 | Redirect behaviour | A link whose expiration time has passed shall not redirect to its registered destination. |
+| BF-06 | Error behaviour | Resolving an expired link shall return `410 Gone` and a safe `LINK_EXPIRED` response. |
+| BF-07 | Analytics | Basic analytics shall expose an expiry timestamp when set and the current active/expired status. |
+
+## 6. Brownfield scope assumptions
+
+- Expiration timestamps are supplied and stored as UTC instants.
+- A link is expired when the current authoritative time is equal to or later than its expiration timestamp.
+- Existing rows have no expiry value and remain active.
+- Expired links remain stored for analytics and auditability; they are not automatically deleted.
+- The public redirect route and short-link format remain unchanged.
+- This is an additive API and schema change; `/api/v2` is not required.
+
+## 7. API-versioning decision
+
+The current management API remains under `/api/v1` because this change is backward compatible:
+
+- `expiresAt` is optional in the create request.
+- Existing callers may omit it without behavioural change.
+- Response fields are only added; no field is removed or retyped.
+- Public links remain unversioned `GET /{code}` because shared links are a stable product contract.
+
+A new management API version is appropriate only for a breaking change, such as removing or
+renaming a required field, changing a response meaning, or changing authentication semantics.
+
+## 8. Out of scope
 
 - Changing or removing expiry after creation (A-13).
 - Bulk expiry, scheduled campaigns, timezone-aware business calendars.
 - Notifying owners before expiry.
 - Purging or archiving expired rows — codes stay retired regardless (ADR-002).
+- Editing the destination URL or expiry of an existing link.
+- A lifecycle-management user interface.
+- A breaking `/api/v2` management API.
 
 ---
 
-## 6. Gate A — approval required
+## 9. Gate A — approval required
 
 - [ ] `410` over `404` for expired links is the right contract (A-11).
-- [ ] Expiry-at-creation-only is an acceptable v2 boundary (A-13).
+- [ ] Expiry-at-creation-only is an acceptable Brownfield boundary (A-13).
 - [ ] The backward-compatibility requirements in §4 are complete.
 
 **Approved by:** _________________  **Date:** __________
