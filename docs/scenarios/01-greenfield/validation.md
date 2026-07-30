@@ -19,10 +19,10 @@ smoke-test.sh      25 checks, 0 failures    against docker compose
 | Automated validation | `mvn verify`: 232 tests, 0 failures; quality gates in §4 | Complete |
 | Final architecture artifact | [`../../architecture-overview.md`](../../architecture-overview.md) reflects the built service | Complete |
 | AI traceability | [`../../ai-assisted-engineering.md`](../../ai-assisted-engineering.md) records accepted, edited, and rejected assistance | Complete |
-| Gate D - engineer sign-off | Engineer confirms evidence, limitations, and repository contents | Pending signature |
+| Gate D - engineer sign-off | Engineer confirms evidence, limitations, and repository contents | Complete |
 
 **Engineer of record:** Srinivas Makkena  
-**Gate D approved:** ____________________  **Date:** __________
+**Gate D approved:** Srinivas Makkena (engineer of record)  **Date:** 2026-07-31
 
 ---
 

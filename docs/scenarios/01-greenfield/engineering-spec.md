@@ -508,4 +508,4 @@ Implementation may begin when the engineer confirms:
 - Quality gates and required validation evidence are included in the task plan.
 - AI use remains bounded, traceable, and subject to engineer review.
 
-**Approved by:** _________________  **Date:** __________
+**Approved by:** Srinivas Makkena (engineer of record)  **Date:** 2026-07-31

@@ -123,3 +123,22 @@ claiming it.
    without saying so would be shipping an information leak with a reliability label on it.
 6. **No performance re-run.** The resolve path gained no work — a statement timeout is a connection
    setting, not a step — but that is a reasoned expectation, not a measurement.
+
+---
+
+## 10. Gate D — engineer sign-off
+
+Required by [`task-decomposition.md`](task-decomposition.md) A8: code is reviewed, quality gates
+are green, evidence is complete, and the scenario's limits are candid.
+
+| Condition | State |
+|---|---|
+| Code reviewed | Complete |
+| Quality gates green | Complete — see §8 |
+| Evidence complete for R-1…R-6 | Complete — see §1, §2, §6 |
+| High-impact decisions recorded | Complete — [ADR-013](../../decisions.md#adr-013) |
+| Scope boundary visible to a reader | Complete — deferrals in §4, unproven claims in §9 |
+| SLO targets distinguished from measured facts | Complete — labelled as design targets wherever they appear |
+
+**Engineer of record:** Srinivas Makkena  
+**Gate D approved:** Srinivas Makkena (engineer of record)  **Date:** 2026-07-31

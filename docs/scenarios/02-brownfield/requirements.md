@@ -157,8 +157,8 @@ renaming a required field, changing a response meaning, or changing authenticati
 
 ## 9. Gate A — approval required
 
-- [ ] `410` over `404` for expired links is the right contract (A-11).
-- [ ] Expiry-at-creation-only is an acceptable Brownfield boundary (A-13).
-- [ ] The backward-compatibility requirements in §4 are complete.
+- [x] `410` over `404` for expired links is the right contract (A-11).
+- [x] Expiry-at-creation-only is an acceptable Brownfield boundary (A-13).
+- [x] The backward-compatibility requirements in §4 are complete.
 
-**Approved by:** _________________  **Date:** __________
+**Approved by:** Srinivas Makkena (engineer of record)  **Date:** 2026-07-31

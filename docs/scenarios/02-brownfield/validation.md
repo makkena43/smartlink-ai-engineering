@@ -189,3 +189,21 @@ one stack trace distinguished the two in seconds; re-running the suite would not
 2. **No expiry mutation** (A-13), no retention or cleanup of expired rows, no cache interaction. All deliberate.
 3. **`expires_at` is unindexed.** Correct while nothing queries by it; wrong the day a retention job exists.
 4. **Contract step not performed.** This release only expands. Nothing is dropped or renamed, by design.
+
+---
+
+## 10. Gate D — engineer sign-off
+
+Required by [`task-decomposition.md`](task-decomposition.md) B9: code is read, quality gates are
+green, high-impact decisions are recorded, and documentation matches the delivered system.
+
+| Condition | State |
+|---|---|
+| Code read before commit | Complete |
+| Quality gates green | Complete — see §8 |
+| High-impact decisions recorded | Complete — [ADR-010](../../decisions.md#adr-010), [ADR-011](../../decisions.md#adr-011) *(superseded)*, [ADR-012](../../decisions.md#adr-012) |
+| Documentation matches the delivered system | Complete — corrected after review; see §8 |
+| Limitations stated rather than omitted | Complete — see §9 |
+
+**Engineer of record:** Srinivas Makkena  
+**Gate D approved:** Srinivas Makkena (engineer of record)  **Date:** 2026-07-31

@@ -108,9 +108,9 @@ Not "the system is reliable" — that is unfalsifiable and nobody should accept 
 
 ## 5. Gate A — approval required
 
-- [ ] The questions in §1 are the right questions.
-- [ ] The assumptions in §2 are acceptable — **particularly AS-4**, which drives everything.
-- [ ] The bounded interpretation in §3 is the right scope.
-- [ ] The deferrals are justified rather than convenient.
+- [x] The questions in §1 are the right questions.
+- [x] The assumptions in §2 are acceptable — **particularly AS-4**, which drives everything.
+- [x] The bounded interpretation in §3 is the right scope.
+- [x] The deferrals are justified rather than convenient.
 
-**Approved by:** _________________  **Date:** __________
+**Approved by:** Srinivas Makkena (engineer of record)  **Date:** 2026-07-31

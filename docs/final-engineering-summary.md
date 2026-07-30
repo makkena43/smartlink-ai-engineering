@@ -212,7 +212,7 @@ In priority order, which is itself a judgment worth stating:
 
 The engineer of record owns every artifact in this repository regardless of which keystrokes were
 typed by a tool. Every line was read before commit; every material AI contribution is classified in
-[`ai-assisted-engineering.md`](ai-assisted-engineering.md), including **28 rejections** with their
+[`ai-assisted-engineering.md`](ai-assisted-engineering.md), including **33 rejections** with their
 reasoning — among them a version verified against a stale search index, a transaction annotation
 that could not work, a mocked failure that would have proven nothing, and a test client that
 silently followed the redirects it was meant to be asserting on.
@@ -220,4 +220,4 @@ silently followed the redirects it was meant to be asserting on.
 A ledger with no rejections would be evidence that review was not happening.
 
 **Engineer of record:** Srinivas Makkena
-**Signed:** _________________  **Date:** __________
+**Signed:** Srinivas Makkena  **Date:** 2026-07-31
