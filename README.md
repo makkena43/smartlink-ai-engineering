@@ -14,7 +14,7 @@ operational signals, and a runbook. Docker-backed verification remains reproduci
 
 ```
 ./mvnw verify   270 tests; requires Docker for PostgreSQL-backed tests
-smoke-test.sh    25 checks against docker compose
+smoke-test.sh    36 checks against docker compose, all three scenarios
 rollback          rehearsed: pre-change jar runs against the migrated schema
 ```
 
@@ -58,7 +58,7 @@ so nothing is installed and nothing survives a restart.
 ```bash
 cp .env.example .env
 docker compose up --build
-./scripts/smoke-test.sh          # 25 checks
+./scripts/smoke-test.sh          # 36 checks
 ```
 
 ### Full test suite
@@ -191,7 +191,7 @@ ambiguity registers, task envelopes, traceability, quality gates, secure AI usag
 sign-off — written *before* the first specification.
 
 The traceability ledger classifies every material AI contribution as `GENERATED`, `EDITED` or
-`REJECTED`. **It contains 33 rejections** — among them a dependency version verified against a
+`REJECTED`. **It contains 35 rejections** — among them a dependency version verified against a
 stale search index, a `@Transactional` annotation that could not do what it appeared to,
 a mocked failure that would have proven nothing, and a test client that silently followed the
 very redirects it was meant to be asserting on.
@@ -210,7 +210,7 @@ Detail: [`docs/ai-assisted-engineering.md`](docs/ai-assisted-engineering.md).
 | Controller | `mvn test` | Status codes, headers, problem+json, route precedence |
 | Integration | `mvn verify` | Real PostgreSQL via Testcontainers; migrations; unique-code races |
 | Fault injection | `mvn verify` | Analytics down → redirect still works; datastore down → 503, never a guess; datastore **slow** → bounded 503, not a held thread; readiness recovers unaided; in-flight request survives shutdown |
-| End-to-end acceptance | `./scripts/smoke-test.sh` | Full reviewer path against the Docker Compose stack |
+| End-to-end acceptance | `./scripts/smoke-test.sh` | The reviewer path against the Docker Compose stack — all three scenarios: create/redirect/validation/analytics, expiry and `410`, and the reliability signals |
 
 Coverage gates at 85 % line / 75 % branch — a **floor, not a target**. A high number over
 weak assertions is worse than a lower number over strong ones, because it converts "we did

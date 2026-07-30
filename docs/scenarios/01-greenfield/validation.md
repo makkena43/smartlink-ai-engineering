@@ -125,7 +125,7 @@ renamed, because the test's identity is what it asserts.
 | Coverage — line | ≥ 85 % | ✅ 91.8 % |
 | Coverage — branch | ≥ 75 % | ✅ 77.7 % |
 | Architecture — ArchUnit | dependency rule holds | ✅ |
-| Smoke — `docker compose` | all checks | ✅ 25/25 |
+| Smoke — `docker compose` | all checks | ✅ 25/25 *(the count at Scenario 01; the script has since grown to 36 as scenarios 02 and 03 added behaviour to cover)* |
 | Static analysis — SpotBugs (HIGH) | zero findings | ✅ 0 |
 | Dependency scan — Trivy | no HIGH/CRITICAL | ✅ 0 (was 22) |
 | Secret scan — Trivy | zero | ✅ 0 |

@@ -6,7 +6,7 @@ graceful shutdown, observable signals, and an operational runbook.
 
 ```
 ./mvnw verify       270 tests; Docker required for PostgreSQL-backed tests
-smoke-test.sh        25 checks against docker compose
+smoke-test.sh        36 checks against docker compose, all three scenarios
 clean-clone          documented reviewer path; rerun before submission
 rollback              rehearsed, not reasoned    see §4.1
 ```
@@ -59,7 +59,7 @@ and one-way ones were escalated rather than settled in implementation.
 | Test suite | `src/test/java` | 270 tests, including fault-injection and controlled shutdown coverage |
 | Generated API contract | `/v3/api-docs`, `/swagger-ui.html` | ✅ generated, never hand-maintained |
 | Schema | `V1__create_short_link.sql` | ✅ Flyway, forward-only |
-| End-to-end acceptance smoke test | `scripts/smoke-test.sh` | ✅ 25/25 |
+| End-to-end acceptance smoke test | `scripts/smoke-test.sh` | ✅ 36/36 — greenfield, expiry, and reliability signals |
 | Performance harness + results | `scripts/performance-test/` | ✅ 3 runs, ratio analysis |
 | Requirements · spec · tasks · validation | `docs/scenarios/01-greenfield/` | ✅ complete |
 | Architecture | `docs/architecture-overview.md` | ✅ written from the built system |
@@ -67,7 +67,7 @@ and one-way ones were escalated rather than settled in implementation.
 | Scenario 02 — impact analysis, spec, tasks, validation | `docs/scenarios/02-brownfield/` | ✅ complete |
 | Scenario 03 — clarified requirements, spec, tasks, validation | `docs/scenarios/03-ambiguous/` | ✅ complete |
 | Operational runbook | `docs/runbook.md` | ✅ Scenario 03 |
-| AI traceability ledger | `docs/ai-assisted-engineering.md` | ✅ **73 entries — 12 generated, 28 edited, 33 rejected.** Counted from the table by script, not stated from memory — see the ledger's own entry on this exact failure |
+| AI traceability ledger | `docs/ai-assisted-engineering.md` | ✅ **76 entries — 12 generated, 29 edited, 35 rejected.** Counted from the table by script, not stated from memory — see the ledger's own entry on this exact failure |
 
 ---
 
@@ -134,7 +134,7 @@ Rehearsed from a fresh `git clone` into an empty directory:
 git clone <repo> && cd smartlink-ai-engineering
 cp .env.example .env
 docker compose up --build -d
-./scripts/smoke-test.sh          # 25/25
+./scripts/smoke-test.sh          # 36/36
 mvn verify                       # 270 tests; requires a running Docker daemon
 ```
 
@@ -144,7 +144,7 @@ mvn verify                       # 270 tests; requires a running Docker daemon
 | Secrets, build output, IDE files committed | none |
 | `mvn verify` from scratch | Run with Docker before submission; PostgreSQL-backed tests use Testcontainers |
 | `docker compose up --build` | ✅ ready in 61 s |
-| `smoke-test.sh` | ✅ 25/25 |
+| `smoke-test.sh` | ✅ 36/36 |
 | README demo commands, run verbatim | ✅ exact output as documented |
 
 ---
@@ -212,7 +212,7 @@ In priority order, which is itself a judgment worth stating:
 
 The engineer of record owns every artifact in this repository regardless of which keystrokes were
 typed by a tool. Every line was read before commit; every material AI contribution is classified in
-[`ai-assisted-engineering.md`](ai-assisted-engineering.md), including **33 rejections** with their
+[`ai-assisted-engineering.md`](ai-assisted-engineering.md), including **35 rejections** with their
 reasoning — among them a version verified against a stale search index, a transaction annotation
 that could not work, a mocked failure that would have proven nothing, and a test client that
 silently followed the redirects it was meant to be asserting on.

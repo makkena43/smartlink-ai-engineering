@@ -40,6 +40,22 @@ create_status() {
     -H 'Content-Type: application/json' -d "{\"destinationUrl\":\"$1\"}"
 }
 
+# An ISO-8601 UTC instant N seconds from now.
+#
+# GNU and BSD date take incompatible flags for relative time, and this script has to run
+# on both - a reviewer's Linux CI and the macOS it was written on. Detected by asking for
+# --version, which GNU has and BSD does not, rather than by guessing from `uname`: the
+# question is which date implementation is on PATH, and on macOS with coreutils installed
+# that is not decided by the operating system.
+#
+# The same class of assumption already broke this repository once, when `mapfile` (bash 4)
+# was used on a machine shipping bash 3.2.
+if date --version >/dev/null 2>&1; then
+  iso_utc_in() { date -u -d "+${1} seconds" '+%Y-%m-%dT%H:%M:%SZ'; }   # GNU
+else
+  iso_utc_in() { date -u -v"+${1}S" '+%Y-%m-%dT%H:%M:%SZ'; }           # BSD
+fi
+
 trap 'red "smoke-test aborted on line ${LINENO}"; exit 2' ERR
 
 echo
@@ -182,6 +198,101 @@ check "counter records exactly 3 redirects" "3" "$TOTAL"
 
 check "analytics for unknown code returns 404" "404" \
   "$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/api/v1/links/zzzzzzz/analytics")"
+
+# ---------------------------------------------------------------------------
+# 9. Expiry  (scenario 02 - BF-01..BF-07, A-11)
+# ---------------------------------------------------------------------------
+echo
+echo "[9] expiry"
+
+# The service decides expiry against the DATABASE clock (ADR-012), not this host's.
+# In compose they are the same machine, but the window below is deliberately wider
+# than any plausible skew - a smoke test that fails intermittently on timing gets
+# ignored, which is worse than not having it.
+EXPIRES_AT=$(iso_utc_in 5)
+
+EXPIRING_CODE=$(curl -fsS -X POST "${BASE_URL}/api/v1/links" \
+  -H 'Content-Type: application/json' \
+  -d "{\"destinationUrl\":\"https://example.com/campaign-ends?id=$RANDOM\",\"expiresAt\":\"${EXPIRES_AT}\"}" \
+  | sed -n 's/.*"code"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+check "a link with a future expiry resolves" "302" \
+  "$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/${EXPIRING_CODE}")"
+
+dim  "        waiting for the link to expire"
+sleep 7
+
+check "the same link then returns 410, not 404" "410" \
+  "$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/${EXPIRING_CODE}")"
+
+# The destination is still in the database and must not be emitted. A redirect-following
+# client has to be unable to reach it - a 410 that still carried Location would honour
+# the status code and defeat the feature.
+EXPIRED_LOCATION=$(curl -sI "${BASE_URL}/${EXPIRING_CODE}" \
+  | awk 'tolower($1)=="location:"{print $2}' | tr -d '\r')
+check "the 410 carries no Location header" "" "$EXPIRED_LOCATION"
+
+EXPIRED_STATS=$(curl -fsS "${BASE_URL}/api/v1/links/${EXPIRING_CODE}/analytics")
+EXPIRED_STATUS=$(printf '%s' "$EXPIRED_STATS" \
+  | sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+check "analytics reports the link as EXPIRED" "EXPIRED" "$EXPIRED_STATUS"
+
+# One resolve happened while active, one was refused. Only the first is a redirect.
+EXPIRED_TOTAL=$(printf '%s' "$EXPIRED_STATS" \
+  | sed -n 's/.*"totalRedirects"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p')
+check "the refused attempt was not counted as a redirect" "1" "$EXPIRED_TOTAL"
+
+# Malformed and past expiries are the caller's mistake, and must say which mistake:
+# INVALID_EXPIRY rather than the generic parse failure (reviewer finding P2b).
+PAST_BODY=$(curl -s -X POST "${BASE_URL}/api/v1/links" \
+  -H 'Content-Type: application/json' \
+  -d '{"destinationUrl":"https://example.com/past","expiresAt":"2020-01-01T00:00:00Z"}')
+check "an expiry in the past is refused as INVALID_EXPIRY" "INVALID_EXPIRY" \
+  "$(printf '%s' "$PAST_BODY" | sed -n 's/.*"code"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+
+ZONELESS_BODY=$(curl -s -X POST "${BASE_URL}/api/v1/links" \
+  -H 'Content-Type: application/json' \
+  -d '{"destinationUrl":"https://example.com/zoneless","expiresAt":"2030-01-01T00:00:00"}')
+check "a zone-less expiry is refused rather than guessed" "INVALID_EXPIRY" \
+  "$(printf '%s' "$ZONELESS_BODY" | sed -n 's/.*"code"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+
+# ---------------------------------------------------------------------------
+# 10. Reliability signals  (scenario 03 - R-1, R-5)
+# ---------------------------------------------------------------------------
+echo
+echo "[10] reliability signals"
+
+# Fault injection lives in the test suite, where the database can be made slow or taken
+# away. What a smoke test can prove against a healthy service is that the signals an
+# operator would reach for during an incident actually exist - an SLO defined over
+# telemetry nobody publishes is a documentation artifact, not a measurement.
+check "request metrics are published" "200" \
+  "$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/actuator/metrics/http.server.requests")"
+
+check "the analytics-failure counter is registered before it is needed" "200" \
+  "$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/actuator/metrics/smartlink.analytics.write.failures")"
+
+# Adding metrics is the obvious way to widen an actuator surface by accident.
+check "the actuator surface is still narrow" "404" \
+  "$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/actuator/env")"
+
+# NFR-14 keeps destinations out of logs; metrics must not reopen that exposure in a
+# place nobody thinks to check. A URI tag of the full request would also be unbounded
+# cardinality, which is how a metrics backend falls over.
+LEAK_MARKER="smoke-leak-canary-$RANDOM"
+LEAK_CODE=$(curl -fsS -X POST "${BASE_URL}/api/v1/links" \
+  -H 'Content-Type: application/json' \
+  -d "{\"destinationUrl\":\"https://example.com/reset?token=${LEAK_MARKER}\"}" \
+  | sed -n 's/.*"code"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+curl -fsS -o /dev/null "${BASE_URL}/${LEAK_CODE}"
+
+if curl -fsS "${BASE_URL}/actuator/metrics/http.server.requests" | grep -q "$LEAK_MARKER"; then
+  red "  FAIL  metrics leak the destination URL"
+  FAIL=$((FAIL + 1))
+else
+  green "  PASS  metrics do not leak destination URLs"
+  PASS=$((PASS + 1))
+fi
 
 # ---------------------------------------------------------------------------
 echo
