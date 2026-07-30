@@ -42,8 +42,15 @@ public final class ShortCode {
     return java.util.Optional.of(new ShortCode(candidate));
   }
 
-  /** Creates a code from a value already known to be well-formed. */
-  static ShortCode of(String value) {
+  /**
+   * Creates a code from a value expected to be well-formed, failing loudly if it is not.
+   *
+   * <p>The counterpart to {@link #parse(String)}: use {@code parse} for anything a caller supplied,
+   * where a malformed value is a routine 404 rather than a fault, and this for values the system
+   * itself produced or stored, where a malformed value means something is genuinely wrong and
+   * silently coping would hide it.
+   */
+  public static ShortCode of(String value) {
     return parse(value)
         .orElseThrow(() -> new IllegalArgumentException("not a well-formed short code"));
   }

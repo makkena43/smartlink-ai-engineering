@@ -23,6 +23,23 @@ public final class Destination {
     this.value = Objects.requireNonNull(value, "value");
   }
 
+  /**
+   * Rebuilds a destination that policy already accepted, on its way out of storage.
+   *
+   * <p>Re-running the policy on read would be wrong twice over. It would put a DNS lookup on the
+   * redirect path, which carries the whole load; and a host that was public on Monday may be
+   * unresolvable on Tuesday, so a link that was legitimately created would start returning errors
+   * for reasons entirely outside its owner's control.
+   *
+   * <p>Validation happens once, at creation (GF-19). The known consequence — a destination
+   * re-pointed after the fact — is the time-of-check-to-time-of-use gap recorded as R-1b, and it is
+   * not fixable here: only re-validation at fetch time closes it, by whichever component eventually
+   * fetches.
+   */
+  public static Destination ofStoredValue(String alreadyValidated) {
+    return new Destination(alreadyValidated);
+  }
+
   /** The exact string that was submitted and accepted. */
   public String value() {
     return value;

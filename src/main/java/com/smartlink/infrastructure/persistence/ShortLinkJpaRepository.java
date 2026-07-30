@@ -50,4 +50,17 @@ public interface ShortLinkJpaRepository extends JpaRepository<ShortLinkEntity, L
   @Modifying
   @Query("update ShortLinkEntity s set s.totalRedirects = s.totalRedirects + 1 where s.id = :id")
   int incrementRedirects(@Param("id") long id);
+
+  /**
+   * The same atomic increment, addressed by code.
+   *
+   * <p>Exists so the redirect path can record a hit without a second round trip to fetch the id. On
+   * the path that carries the entire load, one query beats two — and the return value already
+   * distinguishes "no such link" from "counted", so nothing is lost by not having the row.
+   */
+  @Modifying
+  @Query(
+      "update ShortLinkEntity s set s.totalRedirects = s.totalRedirects + 1 "
+          + "where s.shortCode = :code")
+  int incrementRedirectsByCode(@Param("code") String code);
 }
