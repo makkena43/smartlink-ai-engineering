@@ -7,9 +7,14 @@ Spec-Driven Development (SDD), Java 21 and Spring Boot 3.
 > requirements, architecture, acceptance criteria, risk decisions and final validation; AI
 > is used as a bounded accelerator for analysis, implementation, testing and documentation.
 
-**Status:** v1 scaffold complete and building; v1 domain logic pending Gate A approval.
-The process is deliberately visible — nothing is implemented ahead of the specification that
-governs it.
+**Status:** Scenario 01 (greenfield) complete and verified end to end. Scenarios 02 (expiration)
+and 03 (reliability) are specified but not implemented.
+
+```
+mvn verify      232 tests, 0 failures     line 91.8 %   branch 77.7 %
+smoke-test.sh    25 checks, 0 failures    against docker compose
+trivy             0 HIGH/CRITICAL         dependencies · secrets · image
+```
 
 ---
 
@@ -73,11 +78,17 @@ curl -X POST localhost:8080/api/v1/links \
   -H 'Content-Type: application/json' \
   -d '{"destinationUrl":"https://example.com/campaign"}'
 
+# capture the generated code (it is random - a hard-coded one would 404)
+CODE=$(curl -fsS -X POST localhost:8080/api/v1/links \
+  -H 'Content-Type: application/json' \
+  -d '{"destinationUrl":"https://example.com/campaign"}' \
+  | sed -n 's/.*"code":"\([^"]*\)".*/\1/p')
+
 # resolve  →  302, Location: https://example.com/campaign, Cache-Control: no-store
-curl -i localhost:8080/aB92xK7
+curl -i "localhost:8080/$CODE"
 
 # analytics
-curl localhost:8080/api/v1/links/aB92xK7/analytics
+curl "localhost:8080/api/v1/links/$CODE/analytics"
 
 # rejected: cloud metadata endpoint, well-formed and https-adjacent but blocked  →  422
 curl -X POST localhost:8080/api/v1/links \
@@ -97,18 +108,23 @@ A **modular monolith** with the dependency rule running inward only.
 ```
 
 `domain` imports nothing — not Spring, not JPA. That is not architectural fashion: it makes
-code generation, alias rules and URL policy testable with no context and no container, which
-is what keeps the unit suite fast enough to actually get run.
+code generation and the destination policy testable with no context and no container, which is
+what keeps the unit suite fast enough to actually get run. 88 of the 232 tests run that way.
 
 The two request paths differ in every dimension that matters, and the design is organised
 around that rather than around resource CRUD:
 
 | | Create | Resolve |
 |---|---|---|
-| Caller | authenticated, few | anonymous, many |
-| Trust | known key holder | hostile by default |
+| Caller | anonymous, few | anonymous, many |
+| Trust | hostile by default | hostile by default |
 | Volume | low | the whole load |
-| Cost of failure | caller retries | user never reaches their destination |
+| Cost of failure | caller retries | visitor never reaches their destination |
+| Failure posture | fail loudly | fail safely, never guess |
+
+Both endpoints are unauthenticated — a stated prototype boundary (GF-03, GF-12), which is
+precisely why short codes are cryptographically random: **possession of the code is the only
+access control that exists.**
 
 Full detail: [`docs/architecture-overview.md`](docs/architecture-overview.md).
 
@@ -155,10 +171,10 @@ ambiguity registers, task envelopes, traceability, quality gates, secure AI usag
 sign-off — written *before* the first specification.
 
 The traceability ledger classifies every material AI contribution as `GENERATED`, `EDITED` or
-`REJECTED`. **It currently contains three rejections**, including a smoke-test assertion that
-would have been wrong on first run, a compose file referencing a nonexistent Spring profile,
-and an unverifiable `p99 ≤ 50 ms at 500 rps` performance claim that triggered a constitutional
-amendment.
+`REJECTED`. **It contains 23 rejections** — among them a dependency version verified against a
+stale search index, a `@Transactional` annotation that could not do what it appeared to,
+a mocked failure that would have proven nothing, and a test client that silently followed the
+very redirects it was meant to be asserting on.
 
 A ledger with no rejections would be evidence that review was not happening.
 
@@ -170,8 +186,8 @@ Detail: [`docs/ai-assisted-engineering.md`](docs/ai-assisted-engineering.md).
 
 | Level | Runs | Covers |
 |---|---|---|
-| Unit | `mvn test` | Code generation, alias policy, URL policy — no Spring, no database |
-| Controller | `mvn test` | Status codes, headers, problem+json, auth |
+| Unit | `mvn test` | Code generation, destination policy — no Spring, no database |
+| Controller | `mvn test` | Status codes, headers, problem+json, route precedence |
 | Integration | `mvn verify` | Real PostgreSQL via Testcontainers; migrations; unique-code races |
 | Fault injection | `mvn verify` | Analytics down → redirect still works; datastore down → 503, never a guess |
 | Smoke | `./scripts/smoke-test.sh` | Full reviewer path against the running stack |
