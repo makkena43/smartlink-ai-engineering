@@ -7,14 +7,14 @@ Spec-Driven Development (SDD), Java 21 and Spring Boot 3.
 > requirements, architecture, acceptance criteria, risk decisions and final validation; AI
 > is used as a bounded accelerator for analysis, implementation, testing and documentation.
 
-**Status:** Scenarios 01 (greenfield) and 02 (brownfield — link expiration) complete and verified
-end to end. Scenario 03 (ambiguous — reliability) is specified but not implemented.
+**Status:** All three scenarios are complete. Scenario 03 turns the ambiguous request
+*"Improve reliability"* into tested readiness, bounded dependency behavior, graceful shutdown,
+operational signals, and a runbook. Docker-backed verification remains reproducible with
+`./mvnw verify` on a machine with a running Docker daemon.
 
 ```
-./mvnw verify   258 tests, 0 failures     line 92.6 %   branch 78.7 %
-smoke-test.sh    25 checks, 0 failures    against docker compose
-trivy             0 HIGH/CRITICAL         dependencies · secrets · image
-spotbugs          0 findings at HIGH
+./mvnw verify   270 tests; requires Docker for PostgreSQL-backed tests
+smoke-test.sh    25 checks against docker compose
 rollback          rehearsed: pre-change jar runs against the migrated schema
 ```
 
@@ -63,7 +63,7 @@ docker compose up --build
 ### Full test suite
 
 ```bash
-./mvnw verify                    # 232 tests; needs a Docker daemon for Testcontainers
+./mvnw verify                    # 270 tests; needs a Docker daemon for Testcontainers
 ```
 
 On macOS with **Colima** rather than Docker Desktop, one machine-specific export is still
@@ -128,7 +128,7 @@ A **modular monolith** with the dependency rule running inward only.
 
 `domain` imports nothing — not Spring, not JPA. That is not architectural fashion: it makes
 code generation and the destination policy testable with no context and no container, which is
-what keeps the unit suite fast enough to actually get run. 88 of the 232 tests run that way.
+what keeps the unit suite fast enough to actually get run.
 
 The two request paths differ in every dimension that matters, and the design is organised
 around that rather than around resource CRUD:
@@ -158,13 +158,13 @@ engineering mode.
 |---|---|---|
 | **[01 Greenfield](docs/scenarios/01-greenfield/)** ✅ | *"Build a URL shortener with redirect and basic analytics."* | Design from first principles; 10 ambiguities surfaced and resolved with rationale |
 | **[02 Brownfield](docs/scenarios/02-brownfield/)** ✅ | *"Add expiration so campaigns can stop redirecting after a defined time."* | Codebase reasoning — impact analysis written from the committed code, expand-only migration, backward compatibility, **rollback rehearsed with the pre-change jar** |
-| **[03 Ambiguous](docs/scenarios/03-ambiguous/)** ⏳ *not implemented* | *"Improve reliability."* | Normalising a direction into a bounded, testable scope — and naming what was deliberately excluded |
+| **[03 Ambiguous](docs/scenarios/03-ambiguous/)** ✅ | *"Improve reliability."* | Normalising a direction into bounded, fault-injected reliability work: readiness recovery, safe `503`, timeouts, graceful shutdown, signals, and a runbook |
 
 ---
 
 ## Decisions worth arguing about
 
-Nine ADRs are recorded in [`docs/decisions.md`](docs/decisions.md). Three that a reviewer
+Thirteen ADRs are recorded in [`docs/decisions.md`](docs/decisions.md). Three that a reviewer
 should push on:
 
 **302, not 301** *(ADR-001)*. A cached 301 means repeat clicks never reach the service, so
@@ -226,8 +226,8 @@ Detail, including a known gate hole stated rather than hidden:
    a regression signal, not evidence of production capacity.
 2. **Single node, single AZ.** Horizontal scalability is a property of the design
    (stateless read path), demonstrated by construction rather than by a running cluster.
-3. **API keys are seeded configuration** — no issuance, rotation or revocation.
-4. **No abuse controls in v1.** Rate limiting is scenario 03.
+3. **No authentication or abuse controls.** Rate limiting is deliberately deferred; it needs an
+   identity and traffic policy that this prototype does not define.
 5. **Load figures are environment-bound.** Database and service share a host.
 
 Full list: [`docs/tradeoffs-and-risks.md`](docs/tradeoffs-and-risks.md).
@@ -243,6 +243,7 @@ Full list: [`docs/tradeoffs-and-risks.md`](docs/tradeoffs-and-risks.md).
 | [`decisions.md`](docs/decisions.md) | What was decided, when, and what it cost |
 | [`tradeoffs-and-risks.md`](docs/tradeoffs-and-risks.md) | What was traded away, and what could go wrong |
 | [`testing-strategy.md`](docs/testing-strategy.md) | How correctness is established |
+| [`runbook.md`](docs/runbook.md) | How to diagnose Scenario 03 reliability symptoms |
 | [`task-plan.md`](docs/task-plan.md) | Programme-level sequencing across the three scenarios |
 | [`ai-assisted-engineering.md`](docs/ai-assisted-engineering.md) | The constitution, and the AI traceability ledger |
 | [`final-engineering-summary.md`](docs/final-engineering-summary.md) | Plan, rationale, artifacts, risks, assumptions, limitations |

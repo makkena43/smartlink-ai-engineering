@@ -20,6 +20,12 @@ spring:
     username: sa
     password: ""
     driver-class-name: org.h2.Driver
+    hikari:
+      # H2's spelling of the statement cap in application.yml. Overridden rather than inherited
+      # because `SET statement_timeout` is PostgreSQL syntax and H2 rejects it outright - the
+      # same portability trap that broke this profile once already (ADR-012). DemoProfileIT is
+      # what makes that claim checkable instead of hopeful.
+      connection-init-sql: SET QUERY_TIMEOUT 2000
 
   jpa:
     hibernate:

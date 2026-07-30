@@ -14,6 +14,22 @@ spring:
       validation-timeout: 1000
       maximum-pool-size: 20
       minimum-idle: 5
+      # R-3. connection-timeout above bounds *acquiring* a connection and says nothing about
+      # how long a query may then run on one. Those are different failures and only the first
+      # was bounded: with a database that answered slowly rather than not at all, a 10 s query
+      # produced a >20 s request - 10 s per attempt, twice, because the retry ran too. Twelve
+      # concurrent requests took 131 s. Measured, not assumed; see validation.md §3.
+      #
+      # statement_timeout is a server-side cap PostgreSQL applies to every statement on the
+      # connection, so it covers JPA, JdbcTemplate and the health probe alike rather than only
+      # the paths someone remembered to annotate.
+      #
+      # 2 s is chosen against the 3 s budget in spec §3.2, leaving room for one attempt plus
+      # overhead. CAVEAT, and it is a real one: Flyway migrates through this same pool, so a
+      # future migration taking longer than 2 s will be cancelled. V1 and V2 are metadata-only
+      # and finish in milliseconds. A migration that needs longer must raise this deliberately
+      # for the migration step rather than discovering the cap during a deploy.
+      connection-init-sql: SET statement_timeout = 2000
 
   jpa:
     # Flyway owns the schema. Hibernate is only permitted to check that it agrees.
@@ -29,6 +45,16 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: false
+
+  lifecycle:
+    # R-4. `server.shutdown: graceful` alone stops accepting new connections but leaves the wait
+    # for in-flight requests unbounded, which turns one wedged request into a deploy that never
+    # finishes. This bounds it.
+    #
+    # The number is only half a decision: the platform's termination grace period must be LONGER
+    # than this, or the platform SIGKILLs the process mid-request and the graceful shutdown was
+    # decorative. Stated in the runbook because it is a property of the pair, not of this file.
+    timeout-per-shutdown-phase: ${SMARTLINK_SHUTDOWN_GRACE:30s}
 
 server:
   port: ${SMARTLINK_PORT:8080}
@@ -63,7 +89,17 @@ management:
     web:
       exposure:
         # Deliberately narrow. Actuator's full surface is not something to expose by default.
-        include: health,info
+        #
+        # `metrics` is added for R-5. An SLI that can only be described is not an SLI, and every
+        # signal in spec section 4.1 is derived from `http.server.requests` plus the counter
+        # registered in ResolveLinkUseCase.
+        #
+        # PRODUCTION CAVEAT, and it is not optional: this endpoint is unauthenticated here because
+        # the whole prototype is (GF-03). Request metrics disclose traffic shape and error rates,
+        # so a real deployment binds the management port separately and authenticates it. Adding
+        # the endpoint without stating that would be shipping an information leak with a
+        # reliability label on it.
+        include: health,info,metrics
   endpoint:
     health:
       probes:

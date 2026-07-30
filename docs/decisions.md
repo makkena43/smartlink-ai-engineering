@@ -21,6 +21,7 @@ An ADR with no negative consequences listed is an advertisement, not a decision 
 | [010](#adr-010) | Expired links return 410, not 404 | Accepted | Costly |
 | [011](#adr-011) | Expiry evaluated through a time port, not `Instant.now()` | **Superseded by 012** | Reversible |
 | [012](#adr-012) | The database's clock is authoritative for expiry | Accepted | Reversible |
+| [013](#adr-013) | Every statement is time-bounded, and a timeout is never retried | Accepted | Reversible |
 
 ---
 
@@ -390,3 +391,75 @@ first thing a reviewer without Docker runs, had **no automated coverage at all**
 closed by `DemoProfileIT`, which needs no Docker. The general form is worth stating: *a test
 suite's blind spots are shaped by its fixtures, and the paths a suite cannot see are exactly the
 paths nobody is watching.*
+
+---
+
+## ADR-013 {#adr-013}
+### Every database statement is time-bounded, and a timeout is never retried
+
+**Status** Accepted · **Scenario** 03-ambiguous · **Reversibility** Reversible
+
+**Context.** The greenfield work configured Hikari's `connection-timeout` at 2 s and treated the
+dependency as bounded. It was not. `connection-timeout` bounds *acquiring* a connection and says
+nothing about how long a query may then run on one. Those are different failures, and only the
+first had a limit.
+
+The gap is invisible while the database is either healthy or dead. It appears in the case between
+them — a database that answers slowly — which is also the most common one in production, and the
+one no existing test could reach: `DependencyOutageIT` points at a dead port, where the connection
+is refused immediately.
+
+**Measured before deciding.** `SlowDependencyIT` injects a 10-second query by swapping the table
+for a view whose `WHERE` clause calls `pg_sleep`. Against the pre-change service:
+
+| | Before | After |
+|---|---:|---:|
+| Single resolve against a 10 s query | **> 20 s** | ~2 s |
+| 12 concurrent resolves | **131 s** | ~2 s |
+
+The ">20 s" is the part that changed the decision. The injected delay was 10 s, so the service was
+waiting for it **twice** — the retry classifier treated the failure as transient and sent the same
+expensive query back to a database that had just demonstrated it could not keep up.
+
+**Decision.** Two parts, and the second matters more than the first.
+
+1. **`SET statement_timeout = 2000` as a connection-init statement.** A server-side cap applies to
+   every statement on the connection — JPA, `JdbcTemplate`, and the health probe alike — rather
+   than only the paths someone remembered to annotate. The H2 demo profile carries the equivalent
+   `SET QUERY_TIMEOUT 2000`, because the portability trap in [ADR-012](#adr-012) is recent enough
+   to still be worth respecting.
+2. **`QueryTimeoutException` is excluded from the retry classifier.** It *is* a
+   `TransientDataAccessException`, so this is a deliberate carve-out and not an omission.
+
+**Why a timeout is not transient.** A timeout does not mean the database hiccuped. It means the
+database is too slow *right now*. Retrying doubles the load it is already failing to carry and
+makes the caller wait the full budget twice to be told the same thing. `TransientFailures` already
+carried a Javadoc warning about exactly this — *"a classifier that treats everything as transient
+looks perfectly correct on a healthy system and amplifies load precisely when the dependency is
+already struggling"* — and the classifier then did it anyway, because nothing had ever produced a
+timeout to check the claim against.
+
+**Why 2 s.** It leaves room for one attempt plus overhead inside the 3 s prototype budget in spec
+§3.2, and it is far above anything this workload legitimately needs — every query on the resolve
+path is a single-row primary-key lookup.
+
+**Consequences.**
+
+*Positive:* one slow dependency can no longer exhaust the request pool; the failure is fast,
+bounded, and safe. The blast radius of a slow database is now the requests that touch it, rather
+than every request the service has threads for.
+
+*Negative, and it is a genuine trap:* **Flyway migrates through this same pool.** A future
+migration taking longer than 2 s will be cancelled mid-flight. V1 and V2 are metadata-only and
+finish in milliseconds, so nothing here is at risk today — but a migration that needs longer must
+raise the cap deliberately for the migration step, and the failure mode if nobody does is a
+half-applied deploy. Recorded here rather than in a code comment because a code comment is not
+where anyone looks when writing a migration.
+
+*Also negative:* a legitimately slow query now fails rather than completing. That is the intended
+trade — a request that takes 10 s has already failed from the user's point of view; the only
+question is whether the service admits it or holds a thread pretending otherwise.
+
+**Revisit when** there is a measured latency profile from production traffic. 2 s is a guard
+against unboundedness chosen without data, and it should be replaced by a number derived from
+observed p99 once one exists.

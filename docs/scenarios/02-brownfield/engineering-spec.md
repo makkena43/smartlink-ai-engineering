@@ -1,6 +1,6 @@
 # Scenario 02 - Brownfield Engineering Specification
 
-**Status:** Not started; blocked by Scenario 01 Gate D and Brownfield Gate A.  
+**Status:** Complete — implemented as the approved Brownfield change.
 **Requirements:** [requirements.md](requirements.md)  
 **Pre-change analysis:** [impact-analysis.md](impact-analysis.md)
 

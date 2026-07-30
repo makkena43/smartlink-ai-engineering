@@ -17,8 +17,7 @@ claim, and it does not belong on this page.
 | **302 over 301** (ADR-001) | Complete analytics; expiry and revocation remain honourable | Every click costs an origin request; repeat visitors marginally slower | 301 remains available; the reverse never will be |
 | **No PII in analytics** (ADR-005) | No retention policy, no deletion machinery, no accidental compliance surface | Referrer, device and geography can never be answered retroactively | Designed in deliberately, with minimisation, if a real requirement appears |
 | **Random 7-char codes** (ADR-009) | No enumeration, no oracle, no check-then-insert race | Creation latency has a retry tail; code length is effectively fixed | Widen the alphabet or length; both affect only future codes |
-| **Case-sensitive aliases** (ADR-003) | Namespace density | Links dictated aloud are error-prone | Case-folding would shrink the namespace and create new collisions — unlikely to change |
-| **API key on creation** (A-08) | Attribution, owner-scoped stats, a subject for v3 rate limiting | Not a real identity system; key rotation is manual | Proper key issuance and rotation is a product concern, deliberately out of scope |
+| **No authentication or rate limiting in the prototype** | Focused anonymous-create and resolve flows | A public deployment would be vulnerable to abuse | Add identity, quota policy, and distributed enforcement together; do not add a rate limit with no accountable subject |
 | **Single local deployment** | Repeatable reviewer experience via Docker Compose | Proves nothing about HA | Stateless replicas across AZs behind a load balancer |
 
 ---
@@ -36,8 +35,8 @@ Severity is *impact if it happens*, not likelihood alone.
 | R-5 | **Coverage gate passes vacuously** — JaCoCo skips when no exec data exists | Medium — false confidence, the worst kind | Visible in build output | Noted in `pom.xml`; gate becomes load-bearing at T-02. A skipped gate is treated as a defect, not a pass |
 | R-6 | **Secrets in logs** via destination query strings | High — credential leak through an access log | Log assertion test (AC-6.5) | Destinations never logged at INFO; error responses never echo raw input |
 | R-7 | **AI-suggested dependency** that is hallucinated, unmaintained, or typosquatted | High — supply chain | Every dependency verified on Maven Central before adoption | Versions in `pom.xml` were queried live, not recalled |
-| R-8 | **Idempotency key collision across owners** letting one caller observe another's link | High — data leak | Uniqueness scoped per owner, tested | Key uniqueness is `(owner, key)`, never key alone |
-| R-9 | **Clock skew** across instances making `first/last_resolved_at` incoherent | Low | — | Database-side timestamps, single authoritative clock |
+| R-8 | **Clock skew** across instances making expiry decisions inconsistent | Low | Expiry integration tests | Database-side time is selected with the link row, giving one authoritative clock |
+| R-9 | **Management metrics exposed without network controls** disclose traffic shape | Medium | `ReliabilitySignalsIT` confirms a narrow endpoint surface | Bind management separately and authenticate it in a real deployment |
 | R-10 | **Reviewer cannot run it** — environment drift between author and grader | Medium — the submission fails on its own terms | Clean-clone rehearsal before submission | Docker Compose path; pinned image tags; documented prerequisites |
 
 ---
@@ -66,7 +65,9 @@ else went unsaid:
    measurement is a regression signal, not evidence of production capacity.
 2. **Single node, single AZ.** Horizontal scalability is a property of the design (NFR-4),
    demonstrated by statelessness, not by a running cluster.
-3. **API keys are seeded configuration.** There is no issuance, rotation or revocation flow.
-4. **No abuse controls in v1.** Rate limiting and malicious-destination screening are v3.
+3. **No authentication or abuse controls.** Rate limiting needs an identity and traffic policy;
+   both are deferred rather than simulated.
+4. **No production topology.** Multi-instance, multi-AZ, and multi-region behavior remain
+   design evolution, not demonstrated properties.
 5. **Load figures are environment-bound.** Database and service share a host; the numbers
    describe that arrangement and no other.

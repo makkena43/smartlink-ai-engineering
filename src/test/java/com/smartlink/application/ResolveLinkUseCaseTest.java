@@ -36,7 +36,11 @@ class ResolveLinkUseCaseTest {
   private static final TimeSource FIXED_CLOCK = () -> Instant.parse("2026-01-01T00:00:00Z");
 
   private final FakeRepository repository = new FakeRepository();
-  private final ResolveLinkUseCase useCase = new ResolveLinkUseCase(repository);
+  // Wiring only: a real registry rather than a mock, so the counter is genuinely exercised and
+  // the assertions below are unchanged from before it existed.
+  private final ResolveLinkUseCase useCase =
+      new ResolveLinkUseCase(
+          repository, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
 
   @Test
   @DisplayName("a known code resolves to its exact destination (GF-07)")

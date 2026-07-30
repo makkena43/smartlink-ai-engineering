@@ -7,6 +7,8 @@ import com.smartlink.domain.LinkLifecycle;
 import com.smartlink.domain.ResolvedLink;
 import com.smartlink.domain.ShortCode;
 import com.smartlink.domain.port.LinkRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -35,8 +37,24 @@ public class ResolveLinkUseCase {
 
   private final LinkRepository repository;
 
-  public ResolveLinkUseCase(LinkRepository repository) {
+  /**
+   * R-5. The fail-open catch below is deliberately invisible to the caller, which is correct
+   * behaviour and an observability problem at the same time: a counter that silently stops
+   * incrementing looks identical, from outside, to a link nobody clicked.
+   *
+   * <p>A WARN log is not a substitute. Nobody computes a rate from log lines during an incident,
+   * and the operational question — "are the numbers I am looking at still trustworthy?" — needs a
+   * number, not a search. This counter is what separates "analytics are degraded" from "traffic has
+   * dropped", two situations that demand opposite responses.
+   */
+  private final Counter analyticsWriteFailures;
+
+  public ResolveLinkUseCase(LinkRepository repository, MeterRegistry meters) {
     this.repository = repository;
+    this.analyticsWriteFailures =
+        Counter.builder("smartlink.analytics.write.failures")
+            .description("Redirects served whose counter update failed (fail-open, R-5)")
+            .register(meters);
   }
 
   /**
@@ -99,6 +117,7 @@ public class ResolveLinkUseCase {
       // silent either - a sustained run of these means the counts are drifting, and an
       // operator should be able to see that before someone reports the numbers as wrong.
       log.warn("Could not record redirect for code {}; serving the redirect regardless", code, e);
+      analyticsWriteFailures.increment();
     }
   }
 }

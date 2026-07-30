@@ -11,9 +11,9 @@ into "we checked and it was fine". Tests here assert behaviour, not implementati
 | Level | Covers | Runs | Speed |
 |---|---|---|---|
 | **Unit** | Code generation, alias policy, URL policy, expiry rule (v2), error mapping | `mvn test` (Surefire) | milliseconds — no Spring, no database |
-| **Integration** | Persistence, Flyway migration, unique-code behaviour, idempotency | `mvn verify` (Failsafe, `*IT.java`) | seconds — real PostgreSQL via Testcontainers |
+| **Integration** | Persistence, Flyway migration, unique-code behaviour, expiry, and reliability behavior | `mvn verify` (Failsafe, `*IT.java`) | seconds — real PostgreSQL via Testcontainers |
 | **Controller** | Status codes, headers, `Location`, problem+json shape, auth | `mvn test` (MockMvc) | fast — no container |
-| **Fault injection** | Analytics down, datastore down, readiness transitions | `mvn verify` | seconds |
+| **Fault injection** | Analytics down, datastore down/recovery, slow queries, graceful shutdown, and reliability signals | `mvn verify` | seconds |
 | **Smoke** | Full reviewer path against the running stack | `./scripts/smoke-test.sh` | seconds |
 | **Performance** | Redirect path under bounded local load | `scripts/performance-test/` | minutes, run deliberately |
 
@@ -40,7 +40,8 @@ Two matter most:
 | Test | Asserts | Why it must be a test and not a convention |
 |---|---|---|
 | `AnalyticsFailureIT` | Counter write fails → redirect still returns 302 with correct `Location` (AC-5.4) | The fail-open posture in ADR-004 is invisible in the code. A well-meaning refactor that wraps resolution in one transaction would reverse it, and nothing else would notice |
-| `DatastoreUnavailableIT` | Database down → 503, never a stale or guessed destination (AC-6.4) | "Never redirect wrongly" is a property, and properties are only real when something enforces them |
+| `DependencyOutageIT`, `ReadinessRecoveryIT` | Database down → safe `503`; readiness DOWN → UP on recovery while liveness remains UP | "Never redirect wrongly" and "recover without restart" are properties, and properties are only real when something enforces them |
+| `SlowDependencyIT`, `GracefulShutdownIT`, `ReliabilitySignalsIT` | Slow dependency is bounded; in-flight work survives controlled shutdown; required metrics are observable | Reliability configuration is not evidence until a controlled failure exercises it |
 
 **Performance tests exist to measure an accepted trade-off**, not to produce a headline
 number. Scenario A (load spread over 1 000 codes) versus scenario B (load on one hot code)
@@ -61,7 +62,8 @@ matrix lives in each scenario's `validation.md`.
 
 ## 4. Quality gates
 
-Run in CI. Not waivable by the author acting alone.
+Required pre-submission gates. They are runnable locally; a production repository would enforce
+the same commands in CI.
 
 | Gate | Mechanism | Threshold |
 |---|---|---|
@@ -71,6 +73,8 @@ Run in CI. Not waivable by the author acting alone.
 | Integration | Testcontainers + real PostgreSQL | 100 % pass |
 | Coverage — line | JaCoCo | ≥ 85 % |
 | Coverage — branch | JaCoCo | ≥ 75 % |
+| Dependency / secret scan | Trivy, recorded before submission | Zero HIGH / CRITICAL dependencies; zero secrets |
+| Static analysis | SpotBugs at HIGH | Zero findings |
 | Smoke | `scripts/smoke-test.sh` | all checks pass |
 | Performance | bounded local run | method, machine and sample size reported; **no extrapolated claims** |
 

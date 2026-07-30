@@ -8,9 +8,9 @@ design that was intended. Where the two diverged, the divergence is recorded.
 | Runtime | Java 21.0.11, Spring Boot 3.5.16 |
 | Persistence | PostgreSQL 16, Flyway, Spring Data JPA |
 | Production code | ~2 600 lines, 39 classes |
-| Test code | ~4 100 lines, 258 tests |
+| Test code | ~5 100 lines, 270 tests |
 | Delivery | Docker Compose |
-| Status | Scenarios 01 and 02 complete; 03 (reliability) not started |
+| Status | Scenarios 01, 02, and 03 complete |
 
 That test-to-production ratio of roughly 1.5 : 1 is not an accident of style. Most of it sits in
 two places — the destination policy and the failure postures — because those are where being
@@ -87,7 +87,7 @@ convention — `LayeringTest` fails the build on violation.
 ```
 
 **Why the rule earns its cost.** `DestinationPolicy` and `CodeGenerator` carry the highest branch
-density in the system, and 95 of the 258 tests exercise them — all with no Spring context and no
+density in the system, and a substantial unit-test set exercises them — all with no Spring context and no
 database. That is only possible because DNS sits behind `HostResolver` and storage behind
 `LinkRepository`. A policy that could only be tested when DNS cooperated would be a policy whose
 tests got skipped.
@@ -217,6 +217,8 @@ a reviewer would see.
 | Unparseable request | `400` | Different remedy for the caller |
 | Unknown **or malformed** code | `404` | Identical on purpose — otherwise a probing oracle |
 | Database unreachable | `503` | Come back. Never a guessed or stale destination |
+| **Database slow beyond 2 s** | **`503` within the budget** | A statement timeout, not a wait. An unbounded query holds a request thread, and enough of those exhaust the pool — so one slow dependency stops being one slow endpoint ([ADR-013](decisions.md#adr-013)) |
+| **Shutting down** | **readiness `503`, liveness `200`** | Stop routing here; do not restart me. In-flight requests are served to completion |
 | Code allocation exhausted | `503` | Nothing broken; retryable |
 | Genuinely unanticipated | `500` | Reserved, so its presence in a log means something |
 | **Link expired** | **`410`, no `Location`** | Existed and ended — distinct from "never existed", so a log tells a typo from a finished campaign |
@@ -231,6 +233,12 @@ Retries: **one**, jittered, transient failures only. The cap is load-shedding as
 resilience — three retries per request during an outage means three times the load on a failing
 dependency and a caller who waits three times as long to be told to come back. The counter is
 **not** retried at all: it is fail-open, so a retry buys nothing a visitor can perceive.
+
+**A query timeout is not retried either**, and that is a carve-out rather than an omission: it *is*
+a transient failure by Spring's taxonomy. A timeout means the database is too slow right now, so
+retrying doubles the load it is already failing to carry and makes the caller wait the budget
+twice. This was measured, not reasoned — a 10 s query produced a **>20 s request** before the
+carve-out existed, because the service waited for it twice.
 
 ---
 
@@ -255,7 +263,7 @@ Stated so absence reads as decision:
 | Caching tier | Introduces stale reads, and a stale read here is a wrong redirect. Deferred until measurement justifies the coherency cost |
 | Async analytics | The contention that would justify it is now measured; at this scale it does not yet |
 | Read replicas | Must come *after* a cache, or a just-created link gets a false 404 from a lagging replica |
-| Rate limiting | Scenario 03. No identity exists to attach a quota to |
+| Rate limiting | Deferred. No identity or traffic policy exists to attach a quota to |
 | Multi-instance / multi-AZ | Statelessness is proven by construction; the deployment is not |
 | Fetch-time re-validation | The TOCTOU gap (R-1b) is real and unfixable at creation time. Binding constraint on the first feature that fetches a destination |
 | Homograph detection | A phishing control, not an injection control. A partial implementation gives false assurance |
@@ -326,7 +334,7 @@ rewrite. Everything else on it is a design commitment.
 |---|---|---|
 | v1 | Create, resolve, basic analytics, destination policy, resilience | all |
 | **v2** | **Optional expiration** — nullable `expires_at`, database-authoritative clock ([ADR-012](decisions.md#adr-012)), lifecycle check on resolve, `410 Gone` | §3 resolve flow, §5 data model, §6 failure table |
-| v3 | *not started* — reliability posture | §6, §8 |
+| **v3** | **Reliability posture** — readiness recovery, bounded statement timeout, graceful shutdown, operational metrics, and runbook | §6, §7, §8 |
 
 ### What v2 changed, and what it deliberately did not
 
@@ -342,3 +350,28 @@ after the increment, redirects that never happened would be counted.
 Unchanged: `302` and `Cache-Control` for active links, `404` for unknown *and* malformed codes,
 `503` on datastore failure, and the fail-open counter. `AnalyticsFailureIT` passes untouched,
 which is what proves the last of those survived the new branch.
+
+### What v3 changed, and what it deliberately did not
+
+The request began as *"improve reliability"*, which names no path, no failure mode, no measure and
+no cost boundary. The scope was narrowed before any code was written
+([clarified-requirements](scenarios/03-ambiguous/clarified-requirements.md)), and the narrowing is
+the deliverable as much as the code is.
+
+**Changed.** Every database statement is bounded by a 2 s server-side timeout; a query timeout is
+excluded from retry; the shutdown grace period is bounded; readiness recovery is proven rather than
+assumed; request metrics and an analytics-failure counter make the SLIs computable; a runbook
+exists.
+
+**Two of these were half-built already, and saying so is part of the record.** Readiness already
+consulted the database and the resolve path already failed safe — Scenario 03 tested the untested
+halves (recovery, and slowness rather than absence) instead of claiming the whole.
+
+**Deliberately not changed.** No cache, no circuit breaker, no additional retries, no bulkheads, no
+multi-AZ. Each was rejected for the same reason: **it cannot be validated in this environment.**
+Shipping unvalidated reliability machinery does not improve reliability — it improves the
+appearance of reliability, which is worse than doing nothing because it stops anyone from looking
+further.
+
+The one thing this scenario *removed* is worth more than most of what it added: a retry that was
+amplifying load during exactly the outage it existed to survive.

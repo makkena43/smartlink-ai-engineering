@@ -4,7 +4,8 @@
 **Original request:** [original-requirement.md](original-requirement.md)
 **Requirements baseline:** [clarified-requirements.md](clarified-requirements.md)
 **Engineering specification:** [engineering-spec.md](engineering-spec.md)
-**Status:** Planned; no implementation has started.
+**Status:** Complete — A1 through A8 delivered; validation evidence is in
+[validation.md](validation.md).
 
 > The key deliverable is the progression from an ambiguous direction to bounded engineering work.
 > The AI assistant may help inspect, test, and document tasks, but it may not select the reliability

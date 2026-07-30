@@ -31,12 +31,12 @@ Every scenario runs the same loop, and each arrow is a human decision:
 
 | # | Scenario | Requirement | Stage | State |
 |---|---|---|---|---|
-| 01 | Greenfield | *"Build a URL shortener with redirect and basic analytics."* | Gate A | **awaiting approval** |
-| 02 | Brownfield | *"Add expiration so campaigns can stop redirecting after a defined time."* | not started | blocked by 01 |
-| 03 | Ambiguous | *"Improve reliability."* | not started | blocked by 02 |
+| 01 | Greenfield | *"Build a URL shortener with redirect and basic analytics."* | Gate D | **complete** |
+| 02 | Brownfield | *"Add expiration so campaigns can stop redirecting after a defined time."* | Gate D | **complete** |
+| 03 | Ambiguous | *"Improve reliability."* | Gate D | **complete** |
 
-Scenario 01 tasks: `T-01` complete (scaffold and gates), `T-02`…`T-15` pending Gate A and
-Gate C.
+Scenario 01 tasks and its Gate D evidence are complete. Scenario-specific artifacts remain the
+source of truth for detailed execution and validation.
 
 ---
 
@@ -57,7 +57,7 @@ disambiguating something real.
 
 ---
 
-## Scenario 02 — Brownfield, planned shape
+## Scenario 02 — Brownfield, delivered shape
 
 Expiration was chosen over larger candidates deliberately. It is compact but genuinely
 cross-cutting: it touches persistence, the creation API, redirect logic, backward
@@ -65,7 +65,7 @@ compatibility, migration, documentation and tests — **demonstrating codebase r
 without creating a second product.** A bigger feature would have produced more code and less
 evidence of judgment.
 
-Anticipated impact, to be verified rather than assumed in `02-brownfield/impact-analysis.md`:
+Delivered impact, evidenced in `02-brownfield/impact-analysis.md` and its validation record:
 
 | Area | Expected change |
 |---|---|
@@ -82,13 +82,13 @@ what lets an operator tell a typo from a finished campaign without a database qu
 
 ---
 
-## Scenario 03 — Ambiguous, planned shape
+## Scenario 03 — Ambiguous, delivered shape
 
 *"Improve reliability"* is not a requirement; it is a direction. The engineering work is
 normalising it into something with an acceptance criterion, and then being explicit about
 what was deliberately left out.
 
-Planned normalisation — a **bounded** interpretation:
+Delivered normalisation — a **bounded** interpretation:
 
 - liveness and readiness that reflect real dependency state;
 - safe failure on the resolve path: `503`, never a guessed destination;

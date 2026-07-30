@@ -22,6 +22,21 @@ final class TransientFailures {
 
   static boolean isTransient(Throwable failure) {
     for (Throwable current = failure; current != null; current = current.getCause()) {
+      // Checked first, and it is a deliberate carve-out from the rule below rather than an
+      // oversight: QueryTimeoutException *is* a TransientDataAccessException, so without this it
+      // would be retried.
+      //
+      // A timeout does not mean "the database hiccuped", it means "the database is too slow right
+      // now". Retrying sends a second copy of the same expensive query to a dependency that has
+      // already demonstrated it cannot keep up, and makes the caller wait the full budget twice
+      // to be told the same thing. This is not theoretical: with the retry in place, a 10 s query
+      // produced a >20 s request in SlowDependencyIT before this carve-out existed.
+      //
+      // It is exactly the over-inclusion failure described above — invisible on a healthy system,
+      // load-amplifying during the outage it was meant to survive.
+      if (current instanceof org.springframework.dao.QueryTimeoutException) {
+        return false;
+      }
       if (current instanceof TransientDataAccessException
           // Spring files connection-acquisition failures under *non*-transient, which is
           // arguably right for a dead database and wrong for a reset connection. A single

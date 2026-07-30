@@ -2,7 +2,7 @@
 
 Normalising *"improve reliability"* into something with acceptance criteria.
 
-- **Status:** Not started — blocked by Scenario 02 reaching Gate D
+- **Status:** Complete — assumptions approved and implemented as Scenario 03.
 - **Method:** ask first; where no answer is available, assume explicitly and record the
   assumption as an assumption — never as a finding
 

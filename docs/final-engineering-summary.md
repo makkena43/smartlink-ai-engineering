@@ -1,14 +1,13 @@
 # Final Engineering Summary
 
-**Scenarios 01 (greenfield) and 02 (brownfield: expiration) complete.** Scenario 03 (ambiguous:
-reliability) is specified but not implemented — see §8.
+**Scenarios 01 (greenfield), 02 (brownfield: expiration), and 03 (ambiguous: reliability) are
+complete.** Scenario 03 adds fault-injected readiness recovery, bounded dependency behavior,
+graceful shutdown, observable signals, and an operational runbook.
 
 ```
-./mvnw verify       258 tests, 0 failures        line 92.6 %   branch 78.7 %
-smoke-test.sh        25 checks, 0 failures       against docker compose
-trivy                 0 HIGH/CRITICAL            deps · secrets · image
-spotbugs              0 findings at HIGH
-clean-clone           verified end to end        see §5
+./mvnw verify       270 tests; Docker required for PostgreSQL-backed tests
+smoke-test.sh        25 checks against docker compose
+clean-clone          documented reviewer path; rerun before submission
 rollback              rehearsed, not reasoned    see §4.1
 ```
 
@@ -37,7 +36,7 @@ not, rather than something plausible to be judged against a standard nobody wrot
 
 ## 2. Key decisions
 
-Nine ADRs in [`decisions.md`](decisions.md). The four that shaped the most code:
+Thirteen ADRs in [`decisions.md`](decisions.md). The four that shaped the most code:
 
 | Decision | Reasoning | Reversibility |
 |---|---|---|
@@ -56,8 +55,8 @@ and one-way ones were escalated rather than settled in implementation.
 | Artifact | Location | State |
 |---|---|---|
 | Runnable service | `docker compose up --build` | ✅ verified from a clean clone |
-| Production code | `src/main/java` | 2 292 lines, 34 classes |
-| Test suite | `src/test/java` | 3 503 lines, 232 tests |
+| Production code | `src/main/java` | Modular Spring Boot implementation, including Scenario 03 reliability adapters |
+| Test suite | `src/test/java` | 270 tests, including fault-injection and controlled shutdown coverage |
 | Generated API contract | `/v3/api-docs`, `/swagger-ui.html` | ✅ generated, never hand-maintained |
 | Schema | `V1__create_short_link.sql` | ✅ Flyway, forward-only |
 | Smoke test | `scripts/smoke-test.sh` | ✅ 25/25 |
@@ -66,7 +65,9 @@ and one-way ones were escalated rather than settled in implementation.
 | Architecture | `docs/architecture-overview.md` | ✅ written from the built system |
 | ADRs | `docs/decisions.md` | ✅ 9 |
 | Scenario 02 — impact analysis, spec, tasks, validation | `docs/scenarios/02-brownfield/` | ✅ complete |
-| AI traceability ledger | `docs/ai-assisted-engineering.md` | ✅ **62 entries — 12 generated, 24 edited, 26 rejected.** Counted from the table by script, not stated from memory — see the ledger's own entry on this exact failure |
+| Scenario 03 — clarified requirements, spec, tasks, validation | `docs/scenarios/03-ambiguous/` | ✅ complete |
+| Operational runbook | `docs/runbook.md` | ✅ Scenario 03 |
+| AI traceability ledger | `docs/ai-assisted-engineering.md` | ✅ **73 entries — 12 generated, 28 edited, 33 rejected.** Counted from the table by script, not stated from memory — see the ledger's own entry on this exact failure |
 
 ---
 
@@ -74,15 +75,12 @@ and one-way ones were escalated rather than settled in implementation.
 
 | Gate | Result |
 |---|---|
-| Unit + controller tests | ✅ 166 |
-| Integration tests (real PostgreSQL) | ✅ 66 |
-| Coverage — line / branch | ✅ 91.8 % / 77.7 % |
+| Format | ✅ Spotless check passes |
+| Unit tests | ✅ 172 passed in the latest local execution |
+| H2 demo-profile integration tests | ✅ 6 passed in the latest local execution |
+| PostgreSQL-backed integration and resilience tests | Reproducible with Docker; must be rerun with a running daemon before submission |
 | Architecture rule (ArchUnit) | ✅ enforced, not documented |
-| Static analysis (SpotBugs, HIGH) | ✅ 0 |
-| Dependency vulnerabilities | ✅ 0 HIGH/CRITICAL (was 22) |
-| Secrets | ✅ 0 |
-| Container image | ✅ 0 HIGH/CRITICAL (was 4) |
-| Smoke, against compose | ✅ 25/25 |
+| Smoke, against compose | Re-run before submission |
 | Hot-key contention | ✅ measured, not assumed |
 
 ### The measure that matters most
@@ -137,14 +135,14 @@ git clone <repo> && cd smartlink-ai-engineering
 cp .env.example .env
 docker compose up --build -d
 ./scripts/smoke-test.sh          # 25/25
-mvn verify                       # 232/232
+mvn verify                       # 270 tests; requires a running Docker daemon
 ```
 
 | Check | Result |
 |---|---|
 | Files a reviewer receives | 100 |
 | Secrets, build output, IDE files committed | none |
-| `mvn verify` from scratch | ✅ 232/232 |
+| `mvn verify` from scratch | Run with Docker before submission; PostgreSQL-backed tests use Testcontainers |
 | `docker compose up --build` | ✅ ready in 61 s |
 | `smoke-test.sh` | ✅ 25/25 |
 | README demo commands, run verbatim | ✅ exact output as documented |
@@ -192,12 +190,11 @@ cannot scale independently), single instance (proves nothing about HA), `apk upg
 
 Stated plainly, because the alternative is letting a reviewer find them.
 
-1. **Scenario 03 is not implemented.** Its requirements and the "improve reliability" normalisation are written; nothing is built. This is now the largest gap between what the repository promises and what it delivers.
-2. **No SLO is proven.** Identical code measured p95 55.7 ms and 507 ms in different runs, driven by unrelated desktop load. Only the contention *ratio* survived, and only that is reported as a finding.
-3. **Single instance, single AZ.** Horizontal scalability is a property of the design — no node-local state, asserted by ArchUnit — not something demonstrated.
-4. **No caching, replicas, async analytics, circuit breaking or rate limiting.** Each is real work; none can be *validated* here, and shipping unvalidated reliability machinery improves the appearance of reliability rather than reliability.
-5. **Anonymous by design.** No identity, so no per-creator quota has a subject.
-6. **`apk upgrade` makes the image non-reproducible.** Deliberate: a reproducible image full of known-vulnerable libraries is reproducibly vulnerable.
+1. **No SLO is proven.** Identical code measured p95 55.7 ms and 507 ms in different runs, driven by unrelated desktop load. Only the contention *ratio* survived, and only that is reported as a finding.
+2. **Single instance, single AZ.** Horizontal scalability is a property of the design — no node-local state, asserted by ArchUnit — not something demonstrated.
+3. **No caching, replicas, async analytics, circuit breaking or rate limiting.** Each is real work; none is claimed as delivered by Scenario 03.
+4. **Anonymous by design.** No identity exists, so no per-creator quota has a subject.
+5. **Docker-backed verification needs a running daemon.** The test suite deliberately uses real PostgreSQL through Testcontainers.
 
 ---
 
@@ -205,11 +202,9 @@ Stated plainly, because the alternative is letting a reviewer find them.
 
 In priority order, which is itself a judgment worth stating:
 
-1. **Scenario 03 (reliability)** — normalise the ambiguous requirement into a bounded scope, and be explicit about what was deliberately excluded. The remaining scenario, and the one that demonstrates handling an underspecified request.
-2. **Re-run the performance harness after scenario 02.** The resolve path gained one in-memory comparison on an already-fetched row, so no measurable change is expected — but expected is not measured.
-3. **Abuse controls before any public exposure.** A public shortener without them is a phishing platform with extra steps.
-4. **Key issuance and rotation** — the largest gap between this and something deployable.
-5. **Measure before optimising.** The cache and async analytics remain deferred on the grounds that no measurement justifies them. That claim is now testable rather than merely asserted, and it should be tested rather than trusted.
+1. **Re-run Docker-backed verification and the smoke test before submission.** This is the final reproducibility gate.
+2. **Abuse controls before any public exposure.** A public shortener without them is a phishing platform with extra steps.
+3. **Measure before optimising.** The cache and async analytics remain deferred on the grounds that no measurement justifies them. That claim is now testable rather than merely asserted, and it should be tested rather than trusted.
 
 ---
 

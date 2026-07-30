@@ -6,7 +6,8 @@
 **Pre-change codebase analysis:** [impact-analysis.md](impact-analysis.md)
 **Execution model:** Engineer-led delivery; AI may assist only within an approved task envelope.
 
-> **Status: planned; implementation not started.** Work begins only after Scenario 01 Gate D
+> **Status: complete.** Work began after Scenario 01 Gate D and is evidenced in
+> [validation.md](validation.md).
 > is complete and Brownfield Gate A approves the public `410 Gone` contract, expiry-at-creation
 > boundary, and compatibility baseline. Gate C below is the explicit approval to begin code changes.
 

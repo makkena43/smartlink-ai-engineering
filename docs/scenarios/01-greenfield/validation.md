@@ -163,5 +163,6 @@ Stated plainly, because the alternative is letting a reviewer find them.
 2. **NFR-07 / NFR-08 are partial.** Concurrency correctness under load is proven (120 concurrent redirects on one row, all counted). Throughput, latency and hot-key *performance* are not.
 3. **Single instance.** Horizontal scalability is a property of the design — no node-local state, asserted by ArchUnit — not something a single process demonstrates.
 4. **TOCTOU stands open (R-1b).** Destinations are validated at creation; a hostname re-pointed afterwards is not detected. Not fixable at creation time.
-5. **No abuse controls.** Rate limiting is scenario 03 and bounded even there.
+5. **No abuse controls.** Rate limiting remains deferred because the prototype has no identity
+   or traffic policy to enforce.
 6. **Homograph domains not addressed (R-1c).** A phishing control, deliberately not attempted.

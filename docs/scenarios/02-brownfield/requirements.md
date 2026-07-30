@@ -4,7 +4,7 @@
 defined time."*
 
 - **Scenario type:** Brownfield — a change to a system that already exists, is tested, and has clients
-- **Status:** Not started — blocked by Scenario 01 reaching Gate D
+- **Status:** Complete — implemented as Scenario 02 after the Greenfield baseline was approved.
 - **Engineer of record:** Srinivas Makkena
 
 ---

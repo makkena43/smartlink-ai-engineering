@@ -19,6 +19,9 @@ Full design detail: [`scenarios/01-greenfield/engineering-spec.md`](scenarios/01
 | `GET` | `/actuator/health` | none | Aggregate health |
 | `GET` | `/actuator/health/liveness` | none | Process health |
 | `GET` | `/actuator/health/readiness` | none | Dependency health |
+| `GET` | `/actuator/metrics/http.server.requests` | none | Request rate, status, and latency observations |
+| `GET` | `/actuator/metrics/smartlink.analytics.write.failures` | none | Count of best-effort analytics-write failures |
+| `GET` | `/actuator/metrics` | none | Reliability signals (R-5) — **unauthenticated in the prototype only** |
 | `GET` | `/v3/api-docs` · `/swagger-ui.html` | none | Generated contract |
 
 **Nothing is authenticated.** That is a deliberate prototype boundary (GF-03), not an

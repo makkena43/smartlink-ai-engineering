@@ -2,7 +2,7 @@
 
 **Original request:** [original-requirement.md](original-requirement.md) — *“Improve reliability.”*
 **Requirements baseline:** [clarified-requirements.md](clarified-requirements.md)
-**Status:** Planned; implementation starts only after Scenario 02 Gate D and this scenario’s Gate A.
+**Status:** Complete — implemented and evidenced by the Scenario 03 validation matrix.
 
 ## 1. Purpose and bounded outcome
 

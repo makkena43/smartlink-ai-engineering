@@ -59,7 +59,10 @@ class BoundedRetryTest {
         retry.execute(
             () -> {
               if (calls.incrementAndGet() == 1) {
-                throw new QueryTimeoutException("first attempt timed out");
+                // A connection reset, not a query timeout. This test is about retry mechanics
+                // and needs any genuinely transient failure; QueryTimeoutException stopped
+                // being one at ADR-013 and now proves the opposite of what is intended here.
+                throw new DataAccessResourceFailureException("first attempt hit a reset");
               }
               return "recovered";
             });
@@ -78,9 +81,9 @@ class BoundedRetryTest {
                 retry.execute(
                     () -> {
                       calls.incrementAndGet();
-                      throw new QueryTimeoutException("still down");
+                      throw new DataAccessResourceFailureException("still down");
                     }))
-        .isInstanceOf(QueryTimeoutException.class);
+        .isInstanceOf(DataAccessResourceFailureException.class);
 
     // Asserting the UPPER bound, not merely that a retry happened. A test that only checks
     // "it retried" passes just as happily against an implementation that retries ten times,
@@ -118,8 +121,16 @@ class BoundedRetryTest {
         Arguments.of(new EmptyResultDataAccessException(1), "absence is an answer, not a failure"),
         Arguments.of(
             new InvalidDataAccessApiUsageException("misuse"), "a programming error, not a blip"),
+        Arguments.of(new IllegalStateException("not a data access failure at all"), "out of scope"),
+        // Moved here from the retryable set at ADR-013, and it is the only entry in this file
+        // that changed meaning rather than being added. A QueryTimeoutException IS a
+        // TransientDataAccessException, so this is a deliberate carve-out: a timeout means the
+        // database is too slow right now, and sending the same expensive query back doubles the
+        // load it is already failing to carry while making the caller wait the budget twice.
+        // Measured, not theorised - a 10 s query produced a >20 s request before this changed.
         Arguments.of(
-            new IllegalStateException("not a data access failure at all"), "out of scope"));
+            new QueryTimeoutException("timed out"),
+            "a timeout means the dependency is overloaded; retrying deepens the outage"));
   }
 
   @ParameterizedTest(name = "{1}")
@@ -142,7 +153,6 @@ class BoundedRetryTest {
 
   static Stream<Arguments> retryableFailures() {
     return Stream.of(
-        Arguments.of(new QueryTimeoutException("timeout"), "query timeout"),
         Arguments.of(new CannotAcquireLockException("lock"), "lock contention"),
         Arguments.of(
             new DataAccessResourceFailureException("connection reset"), "connection reset"),
