@@ -64,7 +64,7 @@ and one-way ones were escalated rather than settled in implementation.
 | Requirements · spec · tasks · validation | `docs/scenarios/01-greenfield/` | ✅ complete |
 | Architecture | `docs/architecture-overview.md` | ✅ written from the built system |
 | ADRs | `docs/decisions.md` | ✅ 9 |
-| AI traceability ledger | `docs/ai-assisted-engineering.md` | ✅ 69 entries — 12 generated, 33 edited, **23 rejected** |
+| AI traceability ledger | `docs/ai-assisted-engineering.md` | ✅ 72 entries — 13 generated, 34 edited, **25 rejected** |
 
 ---
 
@@ -189,7 +189,7 @@ In priority order, which is itself a judgment worth stating:
 
 The engineer of record owns every artifact in this repository regardless of which keystrokes were
 typed by a tool. Every line was read before commit; every material AI contribution is classified in
-[`ai-assisted-engineering.md`](ai-assisted-engineering.md), including **23 rejections** with their
+[`ai-assisted-engineering.md`](ai-assisted-engineering.md), including **25 rejections** with their
 reasoning — among them a version verified against a stale search index, a transaction annotation
 that could not work, a mocked failure that would have proven nothing, and a test client that
 silently followed the redirects it was meant to be asserting on.

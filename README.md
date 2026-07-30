@@ -171,7 +171,7 @@ ambiguity registers, task envelopes, traceability, quality gates, secure AI usag
 sign-off — written *before* the first specification.
 
 The traceability ledger classifies every material AI contribution as `GENERATED`, `EDITED` or
-`REJECTED`. **It contains 23 rejections** — among them a dependency version verified against a
+`REJECTED`. **It contains 25 rejections** — among them a dependency version verified against a
 stale search index, a `@Transactional` annotation that could not do what it appeared to,
 a mocked failure that would have proven nothing, and a test client that silently followed the
 very redirects it was meant to be asserting on.
